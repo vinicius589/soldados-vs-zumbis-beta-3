@@ -580,32 +580,35 @@ DIFFICULTIES = {
         "levels": (1, 2),
         # O Médio é a referência de campanha: há margem para montar uma
         # resposta, mas a pressão sobe de verdade antes das ondas de chefe.
-        "initial_supplies": 130,
+        # O Médio precisa ser visivelmente mais confortável que o Difícil.
+        # Ele continua exigindo planejamento no fim, mas não pode parecer a
+        # modalidade veterana já nas primeiras ondas.
+        "initial_supplies": 170,
         "initial_cores": 0,
-        "enemy_hp": 0.92,
-        "enemy_damage": 0.92,
-        "boss_hp": 0.90,
-        "boss_damage": 0.90,
-        "spawn_count": 0.92,
-        "spawn_wait": 1.06,
-        "escort_count": 1.00,
+        "enemy_hp": 0.80,
+        "enemy_damage": 0.80,
+        "boss_hp": 0.78,
+        "boss_damage": 0.78,
+        "spawn_count": 0.84,
+        "spawn_wait": 1.12,
+        "escort_count": 0.84,
         "accent": GOLD,
-        "summary": "Cartas N1 e N2; começa acolhedor e cresce até um desafio justo.",
+        "summary": "Cartas N1 e N2; campanha equilibrada, com pressão gradual e justa.",
     },
     "hard": {
         "label": "DIFÍCIL",
         "levels": (1,),
-        "initial_supplies": 145,
+        "initial_supplies": 105,
         "initial_cores": 0,
-        "enemy_hp": 1.28,
-        "enemy_damage": 1.24,
-        "boss_hp": 1.24,
-        "boss_damage": 1.18,
-        "spawn_count": 1.14,
-        "spawn_wait": 0.86,
-        "escort_count": 1.25,
+        "enemy_hp": 1.44,
+        "enemy_damage": 1.38,
+        "boss_hp": 1.40,
+        "boss_damage": 1.32,
+        "spawn_count": 1.24,
+        "spawn_wait": 0.78,
+        "escort_count": 1.38,
         "accent": RED,
-        "summary": "Apenas N1; hordas densas e chefes muito mais resistentes.",
+        "summary": "Apenas N1; economia curta, hordas densas e chefes realmente veteranos.",
     },
 }
 
@@ -3320,7 +3323,14 @@ class Game:
             self.panel(rect, 236, accent, 12)
             icon_index = DEFENSES[item["key"]]["sprite"] if is_units else ({**ENEMIES, **BOSSES}[item["key"]]["sprite"])
             sprite_region = "city" if is_units else ("city" if item["key"] in {"caminhante", "corredor", "rastejante", "conehead", "policial", "militar", "escudo", "cuspidor", "divisor", "gritador", "saltador", "bruto", "bruto_demolidor", "comandante_mortos", "cuspidor_alfa"} else ("desert" if item["key"] in {"digger", "ladrao", "curandeiro", "parasita", "mutante", "necromante_minion", "mutante_ruinas", "necromante", "colosso_mutante"} else "beach"))
-            sprite = self.card_sprite(sprite_region, item["key"], int(icon_index)) if is_units else self.assets.zombie(sprite_region, int(icon_index))
+            # A ficha de zumbis deve usar exatamente o mesmo retrato que a
+            # batalha. Antes esta tela ainda puxava o quadro antigo do atlas
+            # urbano para o Saltador, que incluía uma pilastra de cenário.
+            # O retrato exclusivo da Beta 3 não traz obstáculo algum.
+            if not is_units and item["key"] == "saltador" and "zombie_jumper_beta3" in self.assets.images:
+                sprite = self.assets.images["zombie_jumper_beta3"]
+            else:
+                sprite = self.card_sprite(sprite_region, item["key"], int(icon_index)) if is_units else self.assets.zombie(sprite_region, int(icon_index))
             self.blit_sprite(sprite, rect.x + 14, rect.y + 44, 105, 118)
             self.draw_text(item["name"], self.fonts.h2, WHITE, (rect.x + 132, rect.y + 22))
             self.draw_text(item["sub"], self.fonts.small, accent, (rect.x + 132, rect.y + 51))

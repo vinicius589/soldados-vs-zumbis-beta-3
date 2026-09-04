@@ -228,8 +228,10 @@ def main() -> None:
         mode_opening_sizes[mode] = len(mode_battle.build_wave(1))
         mode_wave_sizes[mode] = len(mode_battle.build_wave(15))
     assert mode_wave_sizes["easy"] < mode_wave_sizes["medium"] < mode_wave_sizes["hard"]
-    assert mode_opening_sizes == {"easy": 2, "medium": 3, "hard": 3}
-    assert mode_wave_sizes == {"easy": 30, "medium": 39, "hard": 48}
+    # A curva precisa continuar estritamente crescente, mas sem depender de
+    # números congelados: os perfis podem ser refinados sem inverter Médio e
+    # Difícil novamente.
+    assert mode_opening_sizes["easy"] <= mode_opening_sizes["medium"] < mode_opening_sizes["hard"]
     easy_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="easy")
     medium_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="medium")
     hard_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="hard")
@@ -246,9 +248,9 @@ def main() -> None:
     }
     assert difficulty_damage["easy"] < difficulty_damage["medium"] < difficulty_damage["hard"]
     assert difficulty_boss_hp["easy"] < difficulty_boss_hp["medium"] < difficulty_boss_hp["hard"]
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 130
-    assert 0.85 < DIFFICULTIES["medium"]["enemy_hp"] < 1.0
-    assert 0.85 < DIFFICULTIES["medium"]["boss_hp"] < 1.0
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 170
+    assert 0.70 < DIFFICULTIES["medium"]["enemy_hp"] < 0.90
+    assert 0.70 < DIFFICULTIES["medium"]["boss_hp"] < 0.90
     game.difficulty = "medium"
     game.region = "city"
 
@@ -258,7 +260,7 @@ def main() -> None:
     first_wave = city.build_wave(1)
     final_wave = city.build_wave(15)
     assert len(first_wave) < len(final_wave)
-    assert len(final_wave) >= 39 and enemy_wave_scale(15) > 2.0
+    assert len(final_wave) >= 30 and enemy_wave_scale(15) > 2.0
     for wave, boss_key in zip((5, 10, 15), REGIONS["city"]["bosses"]):
         wave_orders = city.build_wave(wave)
         assert any(order.boss and order.key == boss_key for order in wave_orders)
