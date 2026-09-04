@@ -2950,7 +2950,15 @@ class Game:
     def available_selection_keys(self, region: str | None = None) -> list[str]:
         region = region or self.region
         allowed_levels = set(difficulty_profile(self.difficulty)["levels"])
-        return [key for key in self.regional_card_keys(region) if int(DEFENSES[key]["level"]) in allowed_levels]
+        # O Sargento é a carta especial de compensação do Difícil. Ele deixa
+        # de poluir as escolhas de Fácil/Médio e entra no Difícil mesmo sendo
+        # N2, pois esse modo normalmente liberaria apenas as cartas N1.
+        return [
+            key
+            for key in self.regional_card_keys(region)
+            if (key == "instrutor" and self.difficulty == "hard")
+            or (key != "instrutor" and int(DEFENSES[key]["level"]) in allowed_levels)
+        ]
 
     @staticmethod
     def card_display_name(region: str, key: str) -> str:
@@ -3026,7 +3034,7 @@ class Game:
                 for l1, l2 in PROMOTIONS.items()
                 if l1 in regional_keys and l2 in regional_keys
             ]
-            if "instrutor" in regional_keys:
+            if "instrutor" in regional_keys and self.difficulty == "hard":
                 items.append({"kind": "promoter", "key": "instrutor"})
             return items
         return [
@@ -3228,7 +3236,7 @@ class Game:
             self.draw_text(f"{data['cost']} SUP", self.fonts.small, GOLD, (rect.x + 66, rect.y + 14))
             self.draw_text(metric_a, self.fonts.tiny, WHITE, (rect.x + 66, rect.y + 38))
             self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "reload", "medic", "promoter"} else (208, 218, 213), (rect.x + 66, rect.y + 55))
-            special_n2 = self.difficulty == "medium" and key in {"submarino", "bomba_agua", "instrutor"}
+            special_n2 = (self.difficulty == "medium" and key in {"submarino", "bomba_agua"}) or (self.difficulty == "hard" and key == "instrutor")
             level = f"N{data['level']}" + (" • ESPECIAL" if special_n2 else "") + (" • ÁGUA" if data.get("water_only") else "")
             self.draw_text(level, self.fonts.tiny, TEAL if data.get("water_only") else region["accent"], (rect.x + 12, rect.y + 93))
             self.draw_text(f"HP {int(data['hp'])}", self.fonts.tiny, GRAY, (rect.right - 12, rect.y + 93), "topright")
@@ -3275,7 +3283,7 @@ class Game:
         self.screen.blit(overlay, (0, 0))
         accent = REGIONS[self.region]["accent"]
         self.draw_text("EVOLUÇÃO DOS SOLDADOS", self.fonts.title, WHITE, (WIDTH / 2, 20), "center", True)
-        self.draw_text("N1 em cima • N2 embaixo • N3 é prêmio de chefe • o Sargento promove uma N1 próxima após 90 s", self.fonts.small, accent, (WIDTH / 2, 70), "center")
+        self.draw_text("N1 em cima • N2 embaixo • N3 é prêmio de chefe • no Difícil, o Sargento promove uma N1 após 90 s", self.fonts.small, accent, (WIDTH / 2, 70), "center")
         items = self.dossier_items()
         start = self.dossier_page * 6
         for index, item in enumerate(items[start:start + 6]):

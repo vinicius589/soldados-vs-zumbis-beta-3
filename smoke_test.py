@@ -164,10 +164,14 @@ def main() -> None:
         game.draw()
         for region in REGIONS:
             selectable = game.available_selection_keys(region)
-            assert selectable and {DEFENSES[key]["level"] for key in selectable} <= levels
+            assert selectable
+            # O Sargento N2 é a única exceção deliberada do modo Difícil:
+            # não existe nas telas de Fácil/Médio e compensa o elenco só N1.
+            assert ("instrutor" in selectable) == (mode == "hard")
+            assert {DEFENSES[key]["level"] for key in selectable if key != "instrutor"} <= levels
             game.enter_selection(region)
             assert len(game.selection) == 8
-            assert {DEFENSES[key]["level"] for key, _display in game.selection} <= levels
+            assert {DEFENSES[key]["level"] for key, _display in game.selection if key != "instrutor"} <= levels
             cards = game.selection_cards()
             assert len({key for key, _display, _rect in cards}) == len(cards)
             for index, (_key, _display, rect) in enumerate(cards):
