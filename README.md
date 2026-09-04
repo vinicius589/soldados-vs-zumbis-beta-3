@@ -1,4 +1,4 @@
-# Soldados vs Zumbis — Beta 3 Final
+# Soldados vs Zumbis — Beta 3
 
 Este é um jogo tower defense militar original feito em Pygame. A v7 é uma reconstrução separada: usa uma direção visual nova, não reutiliza os cenários nem os sprites das versões anteriores durante a execução e mantém as versões antigas intactas em suas próprias pastas.
 
@@ -20,7 +20,7 @@ A v7.8 faz uma auditoria completa dessa regra de cartas. A origem do erro era um
 
 A v7.9 separa de vez os elencos marítimos. **Atirador de Lancha, Lancha Patrulha, Submarino e Bomba de Água existem apenas na Praia**; não aparecem nas cartas, evoluções ou fichas de Cidade e Deserto. A antiga dupla costeira de lança-chamas também foi substituída pelo **Lançador de Água N1** e pelo **Canhão de Maré N2**. Eles combatem da areia com jatos pressurizados: causam dano moderado, extinguem a queima e deixam os zumbis encharcados, reduzindo seu avanço por alguns segundos. Cidade e Deserto continuam com seus lança-chamas próprios, coerentes com esses terrenos.
 
-## Beta 3 Final
+## Beta 3
 
 Esta entrega fecha a revisão solicitada para a terceira beta, sem criar uma nova camada de conteúdo. Ela corrige a apresentação e a regra dos movimentos especiais, confere a curva dos três modos e torna toda a lista regional realmente encontrável em uma campanha de 15 ondas.
 
@@ -64,8 +64,8 @@ As faces das cartas exibem custo e estatísticas objetivas (dano, munição, alc
 | Modo | Cartas disponíveis | Preparação | Hordas e chefes |
 | --- | --- | --- | --- |
 | **Fácil** | Apenas cartas **N2** | 300 suprimentos e **3 Núcleos de Ascensão** já disponíveis para usar | 42% menos vida nos zumbis comuns, 40% menos vida nos chefes, menos entradas e intervalos maiores. É o modo para aprender as unidades e experimentar N3. |
-| **Médio** | Cartas **N1 e N2** | 130 suprimentos e nenhum Núcleo inicial | Curva de referência: começo acolhedor, pressão moderada no meio e final difícil, porém jogável sem exigir a contenção de última linha. Inimigos comuns têm 8% menos vida/dano e chefes 10% menos vida/dano que a base, mas as 15 ondas continuam escalando. |
-| **Difícil** | Apenas cartas **N1** | 145 suprimentos para permitir uma primeira formação real | Zumbis comuns têm 28% mais vida, chefes 24% mais vida, mais entradas, mais escoltas e menos intervalo entre invasores. É severo, mas continua vencível com munição, suportes e posicionamento. |
+| **Médio** | Cartas **N1 e N2** | 170 suprimentos e nenhum Núcleo inicial | Curva equilibrada: começo acolhedor, pressão moderada no meio e final difícil, porém jogável. Inimigos comuns têm 20% menos vida/dano e chefes 22% menos vida/dano que a base; as 15 ondas continuam escalando, mas não antecipam o peso do modo Difícil. |
+| **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 44% mais vida e 38% mais dano; chefes têm 40% mais vida e 32% mais dano, com mais entradas, mais escoltas e menor intervalo entre invasores. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
 
 O Nível 3 não vira uma carta de seleção: ele é aplicado no campo por Núcleos. No Fácil, os três Núcleos iniciais equivalem aos upgrades N3 já liberados para a primeira missão; nos outros modos, eles continuam sendo conquistados ao derrotar chefes.
 
