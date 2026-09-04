@@ -65,7 +65,7 @@ As faces das cartas exibem custo e estatísticas objetivas (dano, munição, alc
 | Modo | Cartas disponíveis | Preparação | Hordas e chefes |
 | --- | --- | --- | --- |
 | **Fácil** | Apenas cartas **N2** | 300 suprimentos e **3 Núcleos de Ascensão** já disponíveis para usar | 42% menos vida nos zumbis comuns, 40% menos vida nos chefes, menos entradas e intervalos maiores. É o modo para aprender as unidades e experimentar N3. |
-| **Médio** | Cartas **N1 e N2** | 170 suprimentos e nenhum Núcleo inicial | Curva equilibrada com uma pressão extra: inimigos comuns têm 14% menos vida e 12% menos dano; chefes têm 16% menos vida e 13% menos dano. Entradas e escoltas são um pouco maiores que antes, mas o modo continua justo. |
+| **Médio** | Cartas **N1 e N2** | 155 suprimentos e nenhum Núcleo inicial | A campanha de referência: inimigos comuns têm só 6% menos vida e 5% menos dano; chefes têm 8% menos vida e 6% menos dano. As hordas ficam quase na força-base, exigindo estratégia sem herdar a pressão veterana do Difícil. |
 | **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 62% mais vida e 54% mais dano; chefes têm 58% mais vida e 46% mais dano, com horda 35% maior, escoltas 50% maiores, entradas rápidas e poderes 12% mais frequentes. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
 
 O Nível 3 não vira uma carta de seleção: ele é aplicado no campo por Núcleos. No Fácil, os três Núcleos iniciais equivalem aos upgrades N3 já liberados para a primeira missão; nos outros modos, eles continuam sendo conquistados ao derrotar chefes.

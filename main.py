@@ -579,23 +579,21 @@ DIFFICULTIES = {
     "medium": {
         "label": "MÉDIO",
         "levels": (1, 2),
-        # O Médio é a referência de campanha: há margem para montar uma
-        # resposta, mas a pressão sobe de verdade antes das ondas de chefe.
-        # O Médio precisa ser visivelmente mais confortável que o Difícil.
-        # Ele continua exigindo planejamento no fim, mas não pode parecer a
-        # modalidade veterana já nas primeiras ondas.
-        "initial_supplies": 170,
+        # Faixa central de campanha: não é um Fácil com mais inimigos nem um
+        # Difícil disfarçado. Há espaço para uma formação N1/N2, enquanto a
+        # base inimiga já exige cobertura, recarga e resposta aos counters.
+        "initial_supplies": 155,
         "initial_cores": 0,
-        "enemy_hp": 0.86,
-        "enemy_damage": 0.88,
-        "boss_hp": 0.84,
-        "boss_damage": 0.87,
-        "spawn_count": 0.90,
-        "spawn_wait": 1.06,
-        "escort_count": 0.92,
-        "skill_cooldown": 0.97,
+        "enemy_hp": 0.94,
+        "enemy_damage": 0.95,
+        "boss_hp": 0.92,
+        "boss_damage": 0.94,
+        "spawn_count": 0.96,
+        "spawn_wait": 1.00,
+        "escort_count": 1.00,
+        "skill_cooldown": 0.95,
         "accent": GOLD,
-        "summary": "Cartas N1 e N2; campanha equilibrada, com pressão gradual e justa.",
+        "summary": "Cartas N1 e N2; a campanha de referência, tensa mas justa.",
     },
     "hard": {
         "label": "DIFÍCIL",

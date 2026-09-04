@@ -251,9 +251,9 @@ def main() -> None:
     }
     assert difficulty_damage["easy"] < difficulty_damage["medium"] < difficulty_damage["hard"]
     assert difficulty_boss_hp["easy"] < difficulty_boss_hp["medium"] < difficulty_boss_hp["hard"]
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 170
-    assert 0.70 < DIFFICULTIES["medium"]["enemy_hp"] < 0.90
-    assert 0.70 < DIFFICULTIES["medium"]["boss_hp"] < 0.90
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 155
+    assert 0.90 < DIFFICULTIES["medium"]["enemy_hp"] < 1.0
+    assert 0.90 < DIFFICULTIES["medium"]["boss_hp"] < 1.0
     assert DIFFICULTIES["easy"]["skill_cooldown"] == 1.0
     assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
     assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
