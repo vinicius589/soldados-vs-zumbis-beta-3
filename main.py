@@ -572,6 +572,7 @@ DIFFICULTIES = {
         "spawn_count": 0.70,
         "spawn_wait": 1.18,
         "escort_count": 0.67,
+        "skill_cooldown": 1.00,
         "accent": (112, 212, 139),
         "summary": "Cartas N2, 3 Núcleos N3 e hordas bem mais fracas.",
     },
@@ -585,13 +586,14 @@ DIFFICULTIES = {
         # modalidade veterana já nas primeiras ondas.
         "initial_supplies": 170,
         "initial_cores": 0,
-        "enemy_hp": 0.80,
-        "enemy_damage": 0.80,
-        "boss_hp": 0.78,
-        "boss_damage": 0.78,
-        "spawn_count": 0.84,
-        "spawn_wait": 1.12,
-        "escort_count": 0.84,
+        "enemy_hp": 0.86,
+        "enemy_damage": 0.88,
+        "boss_hp": 0.84,
+        "boss_damage": 0.87,
+        "spawn_count": 0.90,
+        "spawn_wait": 1.06,
+        "escort_count": 0.92,
+        "skill_cooldown": 0.97,
         "accent": GOLD,
         "summary": "Cartas N1 e N2; campanha equilibrada, com pressão gradual e justa.",
     },
@@ -600,13 +602,14 @@ DIFFICULTIES = {
         "levels": (1,),
         "initial_supplies": 105,
         "initial_cores": 0,
-        "enemy_hp": 1.44,
-        "enemy_damage": 1.38,
-        "boss_hp": 1.40,
-        "boss_damage": 1.32,
-        "spawn_count": 1.24,
-        "spawn_wait": 0.78,
-        "escort_count": 1.38,
+        "enemy_hp": 1.62,
+        "enemy_damage": 1.54,
+        "boss_hp": 1.58,
+        "boss_damage": 1.46,
+        "spawn_count": 1.35,
+        "spawn_wait": 0.72,
+        "escort_count": 1.50,
+        "skill_cooldown": 0.88,
         "accent": RED,
         "summary": "Apenas N1; economia curta, hordas densas e chefes realmente veteranos.",
     },
@@ -1219,6 +1222,9 @@ class Assets:
             # Retrato individual da Beta 3: o Saltador deixa de trazer uma
             # pilastra/obstáculo embutido e a animação faz o salto real.
             ("zombie_jumper_beta3", ASSET_DIR / "zombie_jumper_beta3.png", "sprite"),
+            # O Rastejante urbano não compartilha mais a silhueta do Corredor:
+            # é um infectado baixo, sem pernas funcionais, com arte própria.
+            ("zombie_crawler_beta3", ASSET_DIR / "zombie_crawler_beta3.png", "sprite"),
             ("lane_bomb_cart", ASSET_DIR / "lane_bomb_cart_v72.png", "sprite"),
             ("desert_lane_bomb_cart", ASSET_DIR / "desert_lane_bomb_cart_v73.png", "sprite"),
             ("beach_land_bomb_cart", ASSET_DIR / "beach_land_bomb_cart_v73.png", "sprite"),
@@ -2355,7 +2361,7 @@ class Battle:
             "hunter": 13.0,
             "leviathan": 18.0,
         }
-        enemy.skill_timer = cooldowns.get(boss_type, 12.0)
+        enemy.skill_timer = cooldowns.get(boss_type, 12.0) * float(self.difficulty_data["skill_cooldown"])
         self.shake = max(self.shake, 0.24)
 
         if boss_type == "bruto_demolidor":
@@ -2432,7 +2438,9 @@ class Battle:
         if enemy.is_boss:
             self.boss_skill(enemy)
             return
-        enemy.skill_timer = random.uniform(3.4, 5.8)
+        # No Difícil os poderes inimigos retornam um pouco antes. No Fácil o
+        # multiplicador é 1, portanto o equilíbrio aprovado não se altera.
+        enemy.skill_timer = random.uniform(3.4, 5.8) * float(self.difficulty_data["skill_cooldown"])
         if "gun" in enemy.tags:
             targets = [d for d in self.defenders if d.row == enemy.row and d.x < enemy.x and enemy.x - d.x < CELL_W * 4]
             if targets:
@@ -3329,6 +3337,8 @@ class Game:
             # O retrato exclusivo da Beta 3 não traz obstáculo algum.
             if not is_units and item["key"] == "saltador" and "zombie_jumper_beta3" in self.assets.images:
                 sprite = self.assets.images["zombie_jumper_beta3"]
+            elif not is_units and item["key"] == "rastejante" and "zombie_crawler_beta3" in self.assets.images:
+                sprite = self.assets.images["zombie_crawler_beta3"]
             else:
                 sprite = self.card_sprite(sprite_region, item["key"], int(icon_index)) if is_units else self.assets.zombie(sprite_region, int(icon_index))
             self.blit_sprite(sprite, rect.x + 14, rect.y + 44, 105, 118)
@@ -3543,9 +3553,11 @@ class Game:
         # atlases regionais, preservando roupa e identidade de cada mapa.
         if enemy.key == "saltador" and "zombie_jumper_beta3" in self.assets.images:
             sprite = self.assets.images["zombie_jumper_beta3"]
+        elif enemy.key == "rastejante" and battle.region == "city" and "zombie_crawler_beta3" in self.assets.images:
+            sprite = self.assets.images["zombie_crawler_beta3"]
         else:
             sprite = self.assets.zombie(battle.region, int(enemy.data["sprite"]))
-        scale = (132, 142) if enemy.is_boss else ((90, 106) if enemy.key == "saltador" else (82, 96))
+        scale = (132, 142) if enemy.is_boss else ((116, 82) if enemy.key == "rastejante" and battle.region == "city" else ((90, 106) if enemy.key == "saltador" else (82, 96)))
 
         # Durante o túnel o Escavador não fica invisível: uma crista de terra
         # percorre a faixa, com poeira/saída do outro lado e a barra de vida

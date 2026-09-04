@@ -1,4 +1,4 @@
-# Manifesto de artes — Beta 3 Final
+# Manifesto de artes — Beta 3
 
 Todas as imagens utilizadas pela Reconstrução v7 foram geradas como ilustrações originais para este projeto. Elas não são cópias nem arquivos extraídos de jogos de terceiros.
 
@@ -63,6 +63,7 @@ Esta dupla substitui o lança-chamas exclusivamente na Praia. Ela luta da areia,
 | --- | --- |
 | assets/v7/loading_beta3_reference.png | Cópia direta e intacta da ilustração de carregamento fornecida pelo usuário para a Beta 3. O jogo apenas a escala para a tela; não altera personagens, logotipo, texto, cores ou composição do arquivo. |
 | assets/v7/zombie_jumper_beta3.png | Retrato original independente do Saltador: atleta infectado de rua em posição firme de corrida/preparação, voltado à esquerda e com vara dobrável. Fundo alfa, sem pilar, ponte, plataforma, parede, obstáculo, cenário, texto ou outro personagem. A curva de salto é produzida pelo Pygame em tempo real. |
+| assets/v7/zombie_crawler_beta3.png | Retrato original independente do Rastejante urbano: criatura baixa, sem pernas funcionais, puxando-se com os braços e cotoveleiras. Fundo alfa, sem cenário, arma, pilar, ponte ou plataforma; não compartilha a silhueta do Corredor. |
 
 ## Atlases de personagens
 
@@ -82,4 +83,4 @@ Cada atlas tem grade 4 por 3, fundo transparente e estética de ilustração mil
 
 ## Uso no jogo
 
-A tela de carregamento prepara a referência visual da Beta 3, a arte do menu, três cenas, quatro contenções temáticas, cinco minas posicionáveis individuais, dois sprites costeiros individuais, oito recortes auditados de carta ativos, o retrato independente do Saltador e os nove atlases antes de liberar o menu (**34 recursos no total**). A arte histórica v7.8 do lança-chamas costeiro permanece salva para preservar a versão anterior, mas não é carregada pela Beta 3. As animações de zumbi e os efeitos de passo, tiro, ácido, fogo, jato de água, explosão, carrinho-bomba, mina naval, cura, promoção e ascensão são produzidos em tempo real por Pygame sobre essas artes; o Escavador usa três etapas de código (entrada, túnel de terra visível e saída), em vez de invisibilidade ou teleporte.
+A tela de carregamento prepara a referência visual da Beta 3, a arte do menu, três cenas, quatro contenções temáticas, cinco minas posicionáveis individuais, dois sprites costeiros individuais, oito recortes auditados de carta ativos, os retratos independentes do Saltador e Rastejante urbano e os nove atlases antes de liberar o menu (**35 recursos no total**). A arte histórica v7.8 do lança-chamas costeiro permanece salva para preservar a versão anterior, mas não é carregada pela Beta 3. As animações de zumbi e os efeitos de passo, tiro, ácido, fogo, jato de água, explosão, carrinho-bomba, mina naval, cura, promoção e ascensão são produzidos em tempo real por Pygame sobre essas artes; o Escavador usa três etapas de código (entrada, túnel de terra visível e saída), em vez de invisibilidade ou teleporte.

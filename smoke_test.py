@@ -61,14 +61,17 @@ def main() -> None:
     # atlases (N1 and N2), four containment devices, five standalone mine
     # sprites, two bespoke coastal-unit sprites and eight dedicated card
     # sprites (including the v7.9 coastal water-launcher pair), the exact
-    # Beta 3 loading reference and the standalone Saltador portrait.
+    # Beta 3 loading reference plus standalone portraits for Saltador and
+    # the urban Rastejante.
     # before the menu is made interactive.
     assert VERSION == "BETA 3"
-    assert game.assets.total == 34
-    assert {"loading_beta3", "zombie_jumper_beta3"} <= set(game.assets.images)
+    assert game.assets.total == 35
+    assert {"loading_beta3", "zombie_jumper_beta3", "zombie_crawler_beta3"} <= set(game.assets.images)
     assert game.assets.images["loading_beta3"].get_size() == (1280, 720)
     assert hashlib.sha256((ASSET_DIR / "loading_beta3_reference.png").read_bytes()).hexdigest() == "39f4406767231aed591a1738d12c67be1d60b220ba782d58ad9f4edc275f548f"
     assert hashlib.sha256((ASSET_DIR / "zombie_jumper_beta3.png").read_bytes()).hexdigest() == "0364d9c3510540f2acc419a0b38fd59555c5b758c9b2d02b6f76e9d47364c262"
+    assert hashlib.sha256((ASSET_DIR / "zombie_crawler_beta3.png").read_bytes()).hexdigest() == "a8cba9727cd36f606cdd5ae21534201caa1463dfbe11c7033e2d7a9606a635a5"
+    assert game.assets.images["zombie_crawler_beta3"] is not game.assets.images["zombie_jumper_beta3"]
     assert all(f"{region}_bg" in game.assets.images for region in REGIONS)
     assert {"lane_bomb_cart", "desert_lane_bomb_cart", "beach_land_bomb_cart", "beach_water_bomb"} <= set(game.assets.images)
     assert {
@@ -251,6 +254,10 @@ def main() -> None:
     assert DIFFICULTIES["medium"]["initial_supplies"] == 170
     assert 0.70 < DIFFICULTIES["medium"]["enemy_hp"] < 0.90
     assert 0.70 < DIFFICULTIES["medium"]["boss_hp"] < 0.90
+    assert DIFFICULTIES["easy"]["skill_cooldown"] == 1.0
+    assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
+    assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
+    assert DIFFICULTIES["hard"]["skill_cooldown"] < DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
     game.difficulty = "medium"
     game.region = "city"
 
@@ -465,7 +472,7 @@ def main() -> None:
     assert hammer_boss.skill_timer == 18.0
     lane_troop.stun = other_troop.stun = 0
     boss_city.boss_skill(hammer_boss)
-    assert lane_troop.stun >= 1.2 and other_troop.stun == 0 and hammer_boss.skill_timer == 18.0
+    assert lane_troop.stun >= 1.2 and other_troop.stun == 0 and hammer_boss.skill_timer == 18.0 * DIFFICULTIES["medium"]["skill_cooldown"]
 
     # The centered red warning happens directly before a queued boss. The
     # spawn order remains held during the announcement, then the boss enters.

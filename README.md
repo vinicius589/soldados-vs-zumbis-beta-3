@@ -26,9 +26,10 @@ Esta entrega fecha a revisão solicitada para a terceira beta, sem criar uma nov
 
 - A tela de carregamento usa **exatamente** a ilustração de referência enviada para esta beta como fundo, pré-carregada antes do menu; o arquivo não foi redesenhado nem substituído.
 - O **Saltador** recebeu um retrato original sem pilar, ponte ou cenário embutido. No jogo, ele percorre um arco de salto visível e ultrapassa somente a primeira defesa bloqueadora.
+- O **Rastejante urbano** agora tem uma silhueta própria, baixa e sem pernas funcionais; ele não reutiliza mais a arte nem a leitura visual do Corredor.
 - O **Escavador** não teleporta mais nem causa uma pancada grátis ao atravessar. Ele entra no chão, aparece como uma crista de terra com poeira percorrendo a faixa e emerge logo atrás da primeira defesa — uma única travessia por inimigo.
 - A diretoria de ondas usa uma regra auditável: começa com o invasor-base, acrescenta ameaças em ordem e libera **100% do elenco de Cidade, Deserto ou Praia na onda 15**. Nenhum personagem regional fica cadastrado sem poder entrar em jogo.
-- Fácil, Médio e Difícil continuam limitando cartas e regulando vida, dano, quantidade, intervalo e escolta de maneira verificável: Fácil < Médio < Difícil. O Médio permanece a campanha de referência; o Difícil é severo, mas conserva recursos para uma primeira formação real.
+- Fácil, Médio e Difícil continuam limitando cartas e regulando vida, dano, quantidade, intervalo, escolta e frequência dos poderes de maneira verificável: Fácil < Médio < Difícil. O Fácil permaneceu intacto; o Médio recebeu só uma pressão extra, enquanto o Difícil passou a ser o modo veterano, ainda vencível sem stun infinito ou paredes impossíveis de vida.
 
 ## Executar
 
@@ -64,8 +65,8 @@ As faces das cartas exibem custo e estatísticas objetivas (dano, munição, alc
 | Modo | Cartas disponíveis | Preparação | Hordas e chefes |
 | --- | --- | --- | --- |
 | **Fácil** | Apenas cartas **N2** | 300 suprimentos e **3 Núcleos de Ascensão** já disponíveis para usar | 42% menos vida nos zumbis comuns, 40% menos vida nos chefes, menos entradas e intervalos maiores. É o modo para aprender as unidades e experimentar N3. |
-| **Médio** | Cartas **N1 e N2** | 170 suprimentos e nenhum Núcleo inicial | Curva equilibrada: começo acolhedor, pressão moderada no meio e final difícil, porém jogável. Inimigos comuns têm 20% menos vida/dano e chefes 22% menos vida/dano que a base; as 15 ondas continuam escalando, mas não antecipam o peso do modo Difícil. |
-| **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 44% mais vida e 38% mais dano; chefes têm 40% mais vida e 32% mais dano, com mais entradas, mais escoltas e menor intervalo entre invasores. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
+| **Médio** | Cartas **N1 e N2** | 170 suprimentos e nenhum Núcleo inicial | Curva equilibrada com uma pressão extra: inimigos comuns têm 14% menos vida e 12% menos dano; chefes têm 16% menos vida e 13% menos dano. Entradas e escoltas são um pouco maiores que antes, mas o modo continua justo. |
+| **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 62% mais vida e 54% mais dano; chefes têm 58% mais vida e 46% mais dano, com horda 35% maior, escoltas 50% maiores, entradas rápidas e poderes 12% mais frequentes. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
 
 O Nível 3 não vira uma carta de seleção: ele é aplicado no campo por Núcleos. No Fácil, os três Núcleos iniciais equivalem aos upgrades N3 já liberados para a primeira missão; nos outros modos, eles continuam sendo conquistados ao derrotar chefes.
 
