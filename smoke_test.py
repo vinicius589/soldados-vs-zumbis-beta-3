@@ -261,14 +261,17 @@ def main() -> None:
     # pelo pacote N2/N3. Médio torna-se a faixa central real e Difícil não
     # é tocado por esta calibração.
     assert DIFFICULTIES["easy"]["initial_supplies"] == 390
-    assert DIFFICULTIES["easy"]["enemy_hp"] == 1.15
+    assert DIFFICULTIES["easy"]["enemy_hp"] == 1.20
     assert DIFFICULTIES["medium"]["initial_supplies"] == 128
-    assert 1.20 < DIFFICULTIES["medium"]["enemy_hp"] < 1.30
-    assert 1.15 < DIFFICULTIES["medium"]["boss_hp"] < 1.30
-    assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.90
+    assert 1.30 < DIFFICULTIES["medium"]["enemy_hp"] < 1.45
+    assert 1.20 < DIFFICULTIES["medium"]["boss_hp"] < 1.35
+    assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.85
     assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
     assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
-    assert DIFFICULTIES["hard"]["skill_cooldown"] <= DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
+    # O Médio recebe a frequência de poderes explicitamente solicitada (18%),
+    # maior que a do Difícil, sem inverter os demais multiplicadores.
+    assert DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
+    assert DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["hard"]["skill_cooldown"]
     game.difficulty = "medium"
     game.region = "city"
 
@@ -530,15 +533,15 @@ def main() -> None:
     assert boss_wave_scale(15) < enemy_wave_scale(15)
     assert boss_damage_scale(15) < enemy_damage_scale(15)
     boss_limits = {
-        "bruto_demolidor": 1100,
-        "comandante_mortos": 1550,
-        "cuspidor_alfa": 2350,
-        "mutante_ruinas": 1225,
-        "necromante": 1750,
-        "colosso_mutante": 2700,
-        "tide_brute": 1175,
-        "cacador_abissal": 1850,
-        "leviata": 3000,
+        "bruto_demolidor": 1175,
+        "comandante_mortos": 1650,
+        "cuspidor_alfa": 2500,
+        "mutante_ruinas": 1300,
+        "necromante": 1850,
+        "colosso_mutante": 2900,
+        "tide_brute": 1250,
+        "cacador_abissal": 2000,
+        "leviata": 3200,
     }
     for boss_key, maximum_hp in boss_limits.items():
         wave = 5 if boss_key in {"bruto_demolidor", "mutante_ruinas", "tide_brute"} else (10 if boss_key in {"comandante_mortos", "necromante", "cacador_abissal"} else 15)
