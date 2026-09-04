@@ -601,14 +601,16 @@ DIFFICULTIES = {
         "levels": (1,),
         "initial_supplies": 105,
         "initial_cores": 0,
-        "enemy_hp": 1.62,
-        "enemy_damage": 1.54,
-        "boss_hp": 1.58,
-        "boss_damage": 1.46,
-        "spawn_count": 1.35,
-        "spawn_wait": 0.72,
-        "escort_count": 1.50,
-        "skill_cooldown": 0.88,
+        # Degrau final: +4 pontos percentuais em todas as pressões do modo
+        # veterano, ainda sem stuns infinitos ou vida de chefe sem teto.
+        "enemy_hp": 1.66,
+        "enemy_damage": 1.58,
+        "boss_hp": 1.62,
+        "boss_damage": 1.50,
+        "spawn_count": 1.39,
+        "spawn_wait": 0.68,
+        "escort_count": 1.54,
+        "skill_cooldown": 0.84,
         "accent": RED,
         "summary": "Apenas N1; economia curta, hordas densas e chefes realmente veteranos.",
     },
@@ -1658,6 +1660,9 @@ class Battle:
 
     def remove_defender(self, row: int, col: int) -> None:
         """Retira uma defesa por escolha do jogador e devolve parte do custo."""
+        if self.difficulty == "easy":
+            self.announce("No Fácil, as tropas posicionadas não podem ser removidas.", 1.8, GRAY)
+            return
         defender = next((d for d in self.defenders if d.row == row and d.col == col), None)
         if defender is None:
             self.announce("Nenhuma tropa nesta faixa para remover.", 1.4, GRAY)
@@ -2700,7 +2705,7 @@ class Battle:
             return
         if self.paused:
             return
-        if self.remove_rect().collidepoint(pos):
+        if self.difficulty != "easy" and self.remove_rect().collidepoint(pos):
             self.remove_mode = not self.remove_mode
             self.use_core = False
             self.announce("Ferramenta de remoção ativada: clique em uma defesa." if self.remove_mode else "Ferramenta de remoção desativada.", 1.8, TEAL)
@@ -2833,7 +2838,7 @@ class Game:
                 if self.battle.cores:
                     self.battle.use_core = not self.battle.use_core
                     self.battle.remove_mode = False
-            elif key == pygame.K_r:
+            elif key == pygame.K_r and self.battle.difficulty != "easy":
                 self.battle.remove_mode = not self.battle.remove_mode
                 self.battle.use_core = False
                 self.battle.announce("Ferramenta de remoção ativada." if self.battle.remove_mode else "Ferramenta de remoção desativada.", 1.4, TEAL)
@@ -3467,7 +3472,8 @@ class Game:
         self.panel(shelf, 221, battle.region_color(), 8)
         self.button("MENU", battle.menu_rect(), battle.region_color())
         self.button("PAUSA", battle.pause_rect(), GOLD)
-        self.button("REMOVER", battle.remove_rect(), RED if battle.remove_mode else (88, 125, 132))
+        if battle.difficulty != "easy":
+            self.button("REMOVER", battle.remove_rect(), RED if battle.remove_mode else (88, 125, 132))
         self.button(f"N3 x{battle.cores}", battle.core_rect(), GOLD if battle.cores else (70, 73, 75), battle.cores > 0)
         self.button("PRÓXIMA", battle.next_wave_rect(), battle.region_color(), not battle.started_wave)
         if battle.started_wave:

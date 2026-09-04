@@ -582,6 +582,19 @@ def main() -> None:
     game.handle_click(city.menu_rect().center)
     assert game.scene == "title" and game.battle is None
 
+    # Fácil mantém N2/N3 e suprimentos, mas não oferece a ferramenta de
+    # remoção: o botão some, o atalho R é ignorado e a API não devolve a tropa.
+    game.difficulty = "easy"
+    easy_field = Battle(game, "city", [("soldado", "Fuzileiro")])
+    easy_field.defenders = [Defender("soldado", "Fuzileiro", 0, 1, DEFENSES["soldado"], 1)]
+    supplies_before_easy_remove = easy_field.supplies
+    easy_field.remove_defender(0, 1)
+    assert len(easy_field.defenders) == 1 and easy_field.supplies == supplies_before_easy_remove
+    game.battle = easy_field
+    game.scene = "battle"
+    game.handle_click(easy_field.remove_rect().center)
+    assert not easy_field.remove_mode
+
     pygame.quit()
     print("OK: Beta 3 pré-carrega a arte de carregamento, libera todo o elenco regional e passa nas verificações táticas, de animação e dificuldade.")
 
