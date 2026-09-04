@@ -563,40 +563,38 @@ DIFFICULTIES = {
     "easy": {
         "label": "FÁCIL",
         "levels": (2,),
-        "initial_supplies": 300,
+        "initial_supplies": 390,
         "initial_cores": 3,
-        # Mantém exatamente a pressão que estava aprovada para o Médio;
-        # como este modo entrega N2 e três Núcleos, ela funciona aqui como
-        # um Fácil generoso sem transformar os inimigos em decoração.
-        "enemy_hp": 0.94,
-        "enemy_damage": 0.95,
-        "boss_hp": 0.92,
-        "boss_damage": 0.94,
-        "spawn_count": 0.96,
-        "spawn_wait": 1.00,
-        "escort_count": 1.00,
-        "skill_cooldown": 0.95,
+        # Perfil definido pelo jogador: o arsenal N2, os três Núcleos e 390
+        # suprimentos sustentam esta pressão sem retirar o caráter acessível.
+        "enemy_hp": 1.15,
+        "enemy_damage": 1.15,
+        "boss_hp": 1.12,
+        "boss_damage": 1.12,
+        "spawn_count": 1.12,
+        "spawn_wait": 0.94,
+        "escort_count": 1.18,
+        "skill_cooldown": 0.90,
         "accent": (112, 212, 139),
-        "summary": "Cartas N2, 3 Núcleos N3 e uma pressão leve, mas ativa.",
+        "summary": "Cartas N2, 390 SUP e 3 Núcleos para uma campanha acessível.",
     },
     "medium": {
         "label": "MÉDIO",
         "levels": (1, 2),
-        # Faixa central de campanha: força-base levemente acima do padrão,
-        # recurso menor e ondas mais densas. Exige leitura de counters e
-        # recarga, mas conserva N1/N2 e fica longe do modo veterano.
-        "initial_supplies": 140,
+        # Perfil definido pelo jogador: uma faixa central exigente, com N1/N2
+        # e menos recurso para que posicionamento, recarga e counters importem.
+        "initial_supplies": 128,
         "initial_cores": 0,
-        "enemy_hp": 1.12,
-        "enemy_damage": 1.12,
-        "boss_hp": 1.10,
-        "boss_damage": 1.10,
-        "spawn_count": 1.10,
-        "spawn_wait": 0.90,
-        "escort_count": 1.15,
-        "skill_cooldown": 0.92,
+        "enemy_hp": 1.23,
+        "enemy_damage": 1.23,
+        "boss_hp": 1.20,
+        "boss_damage": 1.20,
+        "spawn_count": 1.20,
+        "spawn_wait": 0.86,
+        "escort_count": 1.30,
+        "skill_cooldown": 0.88,
         "accent": GOLD,
-        "summary": "Cartas N1 e N2; desafio de campanha com pressão constante.",
+        "summary": "Cartas N1/N2, pouco recurso e pressão constante de campanha.",
     },
     "hard": {
         "label": "DIFÍCIL",

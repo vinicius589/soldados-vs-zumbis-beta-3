@@ -238,7 +238,9 @@ def main() -> None:
     # A curva precisa continuar estritamente crescente, mas sem depender de
     # números congelados: os perfis podem ser refinados sem inverter Médio e
     # Difícil novamente.
-    assert mode_opening_sizes["easy"] <= mode_opening_sizes["medium"] < mode_opening_sizes["hard"]
+    # A primeira onda usa quantidade inteira: Médio e Difícil podem ambos
+    # arredondar para quatro invasores, mas nunca invertem a progressão.
+    assert mode_opening_sizes["easy"] < mode_opening_sizes["medium"] <= mode_opening_sizes["hard"]
     easy_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="easy")
     medium_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="medium")
     hard_walker = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 8, difficulty="hard")
@@ -258,14 +260,15 @@ def main() -> None:
     # Fácil recebe a antiga pressão do Médio, mas continua mais acessível
     # pelo pacote N2/N3. Médio torna-se a faixa central real e Difícil não
     # é tocado por esta calibração.
-    assert DIFFICULTIES["easy"]["enemy_hp"] == 0.94
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 140
-    assert 1.0 < DIFFICULTIES["medium"]["enemy_hp"] < 1.2
-    assert 1.0 < DIFFICULTIES["medium"]["boss_hp"] < 1.2
-    assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.95
+    assert DIFFICULTIES["easy"]["initial_supplies"] == 390
+    assert DIFFICULTIES["easy"]["enemy_hp"] == 1.15
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 128
+    assert 1.20 < DIFFICULTIES["medium"]["enemy_hp"] < 1.30
+    assert 1.15 < DIFFICULTIES["medium"]["boss_hp"] < 1.30
+    assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.90
     assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
     assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
-    assert DIFFICULTIES["hard"]["skill_cooldown"] < DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
+    assert DIFFICULTIES["hard"]["skill_cooldown"] <= DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
     game.difficulty = "medium"
     game.region = "city"
 
@@ -527,15 +530,15 @@ def main() -> None:
     assert boss_wave_scale(15) < enemy_wave_scale(15)
     assert boss_damage_scale(15) < enemy_damage_scale(15)
     boss_limits = {
-        "bruto_demolidor": 1000,
-        "comandante_mortos": 1400,
-        "cuspidor_alfa": 2150,
-        "mutante_ruinas": 1100,
-        "necromante": 1575,
-        "colosso_mutante": 2450,
-        "tide_brute": 1050,
-        "cacador_abissal": 1700,
-        "leviata": 2750,
+        "bruto_demolidor": 1100,
+        "comandante_mortos": 1550,
+        "cuspidor_alfa": 2350,
+        "mutante_ruinas": 1225,
+        "necromante": 1750,
+        "colosso_mutante": 2700,
+        "tide_brute": 1175,
+        "cacador_abissal": 1850,
+        "leviata": 3000,
     }
     for boss_key, maximum_hp in boss_limits.items():
         wave = 5 if boss_key in {"bruto_demolidor", "mutante_ruinas", "tide_brute"} else (10 if boss_key in {"comandante_mortos", "necromante", "cacador_abissal"} else 15)
