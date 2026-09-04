@@ -565,25 +565,9 @@ DIFFICULTIES = {
         "levels": (2,),
         "initial_supplies": 300,
         "initial_cores": 3,
-        "enemy_hp": 0.58,
-        "enemy_damage": 0.58,
-        "boss_hp": 0.60,
-        "boss_damage": 0.58,
-        "spawn_count": 0.70,
-        "spawn_wait": 1.18,
-        "escort_count": 0.67,
-        "skill_cooldown": 1.00,
-        "accent": (112, 212, 139),
-        "summary": "Cartas N2, 3 Núcleos N3 e hordas bem mais fracas.",
-    },
-    "medium": {
-        "label": "MÉDIO",
-        "levels": (1, 2),
-        # Faixa central de campanha: não é um Fácil com mais inimigos nem um
-        # Difícil disfarçado. Há espaço para uma formação N1/N2, enquanto a
-        # base inimiga já exige cobertura, recarga e resposta aos counters.
-        "initial_supplies": 155,
-        "initial_cores": 0,
+        # Mantém exatamente a pressão que estava aprovada para o Médio;
+        # como este modo entrega N2 e três Núcleos, ela funciona aqui como
+        # um Fácil generoso sem transformar os inimigos em decoração.
         "enemy_hp": 0.94,
         "enemy_damage": 0.95,
         "boss_hp": 0.92,
@@ -592,8 +576,27 @@ DIFFICULTIES = {
         "spawn_wait": 1.00,
         "escort_count": 1.00,
         "skill_cooldown": 0.95,
+        "accent": (112, 212, 139),
+        "summary": "Cartas N2, 3 Núcleos N3 e uma pressão leve, mas ativa.",
+    },
+    "medium": {
+        "label": "MÉDIO",
+        "levels": (1, 2),
+        # Faixa central de campanha: força-base levemente acima do padrão,
+        # recurso menor e ondas mais densas. Exige leitura de counters e
+        # recarga, mas conserva N1/N2 e fica longe do modo veterano.
+        "initial_supplies": 140,
+        "initial_cores": 0,
+        "enemy_hp": 1.12,
+        "enemy_damage": 1.12,
+        "boss_hp": 1.10,
+        "boss_damage": 1.10,
+        "spawn_count": 1.10,
+        "spawn_wait": 0.90,
+        "escort_count": 1.15,
+        "skill_cooldown": 0.92,
         "accent": GOLD,
-        "summary": "Cartas N1 e N2; a campanha de referência, tensa mas justa.",
+        "summary": "Cartas N1 e N2; desafio de campanha com pressão constante.",
     },
     "hard": {
         "label": "DIFÍCIL",

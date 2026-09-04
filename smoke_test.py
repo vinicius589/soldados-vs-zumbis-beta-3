@@ -255,10 +255,14 @@ def main() -> None:
     }
     assert difficulty_damage["easy"] < difficulty_damage["medium"] < difficulty_damage["hard"]
     assert difficulty_boss_hp["easy"] < difficulty_boss_hp["medium"] < difficulty_boss_hp["hard"]
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 155
-    assert 0.90 < DIFFICULTIES["medium"]["enemy_hp"] < 1.0
-    assert 0.90 < DIFFICULTIES["medium"]["boss_hp"] < 1.0
-    assert DIFFICULTIES["easy"]["skill_cooldown"] == 1.0
+    # Fácil recebe a antiga pressão do Médio, mas continua mais acessível
+    # pelo pacote N2/N3. Médio torna-se a faixa central real e Difícil não
+    # é tocado por esta calibração.
+    assert DIFFICULTIES["easy"]["enemy_hp"] == 0.94
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 140
+    assert 1.0 < DIFFICULTIES["medium"]["enemy_hp"] < 1.2
+    assert 1.0 < DIFFICULTIES["medium"]["boss_hp"] < 1.2
+    assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.95
     assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
     assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
     assert DIFFICULTIES["hard"]["skill_cooldown"] < DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
@@ -523,15 +527,15 @@ def main() -> None:
     assert boss_wave_scale(15) < enemy_wave_scale(15)
     assert boss_damage_scale(15) < enemy_damage_scale(15)
     boss_limits = {
-        "bruto_demolidor": 950,
-        "comandante_mortos": 1300,
-        "cuspidor_alfa": 2000,
-        "mutante_ruinas": 1050,
-        "necromante": 1450,
-        "colosso_mutante": 2250,
-        "tide_brute": 1000,
-        "cacador_abissal": 1550,
-        "leviata": 2500,
+        "bruto_demolidor": 1000,
+        "comandante_mortos": 1400,
+        "cuspidor_alfa": 2150,
+        "mutante_ruinas": 1100,
+        "necromante": 1575,
+        "colosso_mutante": 2450,
+        "tide_brute": 1050,
+        "cacador_abissal": 1700,
+        "leviata": 2750,
     }
     for boss_key, maximum_hp in boss_limits.items():
         wave = 5 if boss_key in {"bruto_demolidor", "mutante_ruinas", "tide_brute"} else (10 if boss_key in {"comandante_mortos", "necromante", "cacador_abissal"} else 15)
