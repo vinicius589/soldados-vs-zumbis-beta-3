@@ -18,7 +18,7 @@ A v7.7 adiciona a escolha de **Fácil, Médio ou Difícil** entre o menu e o map
 
 A v7.8 faz uma auditoria completa dessa regra de cartas. A origem do erro era uma tabela genérica que supunha que todas as folhas de arte guardavam N1 e N2 no mesmo índice; na realidade, Cidade, Deserto e Praia organizam as suas funções em posições diferentes. Agora há uma tabela explícita por **carta + região + nível**, usada pela seleção, tooltip, dossiê, card superior e defesa posicionada. Onde um atlas não tinha uma silhueta realmente exclusiva, foram criadas sete artes originais adicionais: os dois morteiros da Cidade, o morteiro N2 do Deserto, a mina N1 do Deserto, o lança-chamas N1 e os dois morteiros da Praia. A v7.8 também recalibra o Médio para começar mais gentil (130 SUP, inimigos 8% mais fracos, chefes 10% mais fracos e entradas 6% mais espaçadas), mantendo a progressão rumo às ondas finais sem transformá-lo em Fácil.
 
-A v7.9 separa de vez os elencos marítimos. **Atirador de Lancha, Lancha Patrulha, Submarino e Bomba de Água existem apenas na Praia**; não aparecem nas cartas, evoluções ou fichas de Cidade e Deserto. A antiga dupla costeira de lança-chamas também foi substituída pelo **Lançador de Água N1** e pelo **Canhão de Maré N2**. Eles combatem da areia com jatos pressurizados: causam dano moderado, extinguem a queima e deixam os zumbis encharcados, reduzindo seu avanço por alguns segundos. Cidade e Deserto continuam com seus lança-chamas próprios, coerentes com esses terrenos.
+A v7.9 separa de vez os elencos marítimos. **Atirador de Lancha, Lancha Patrulha, Submarino e Bomba de Água existem apenas na Praia**; não aparecem nas cartas, evoluções ou fichas de Cidade e Deserto. A antiga dupla costeira de lança-chamas também foi substituída pelo **Lançador de Água N1** e pelo **Canhão de Maré N2**. Eles combatem da areia com jatos pressurizados: causam dano moderado, extinguem a queima e deixam os zumbis encharcados, reduzindo seu avanço por alguns segundos.
 
 ## Beta 3
 
@@ -27,6 +27,7 @@ Esta entrega fecha a revisão solicitada para a terceira beta, sem criar uma nov
 - A tela de carregamento usa **exatamente** a ilustração de referência enviada para esta beta como fundo, pré-carregada antes do menu; o arquivo não foi redesenhado nem substituído.
 - O **Saltador** recebeu um retrato original sem pilar, ponte ou cenário embutido. No jogo, ele percorre um arco de salto visível e ultrapassa somente a primeira defesa bloqueadora.
 - O **Rastejante urbano** agora tem uma silhueta própria, baixa e sem pernas funcionais; ele não reutiliza mais a arte nem a leitura visual do Corredor.
+- A Cidade substitui o fogo por **Pulverizador de Veneno N1 → Canhão de Veneno N2**, com duas artes originais próprias. O estado **Envenenado** dura 4,2 segundos, causa dano periódico e reduz o avanço em 12%. O **Lança-Chamas** fica exclusivo do Deserto, recebeu mais dano e aplica **Queimadura** com duração finita.
 - O **Escavador** não teleporta mais nem causa uma pancada grátis ao atravessar. Ele entra no chão, aparece como uma crista de terra com poeira percorrendo a faixa e emerge logo atrás da primeira defesa — uma única travessia por inimigo.
 - A diretoria de ondas usa uma regra auditável: começa com o invasor-base, acrescenta ameaças em ordem e libera **100% do elenco de Cidade, Deserto ou Praia na onda 15**. Nenhum personagem regional fica cadastrado sem poder entrar em jogo.
 - Fácil, Médio e Difícil continuam limitando cartas e regulando vida, dano, quantidade, intervalo, escolta e frequência dos poderes de maneira verificável: Fácil < Médio < Difícil. O Fácil permaneceu intacto; o Médio recebeu só uma pressão extra, enquanto o Difícil passou a ser o modo veterano, ainda vencível sem stun infinito ou paredes impossíveis de vida.
@@ -65,7 +66,7 @@ As faces das cartas exibem custo e estatísticas objetivas (dano, munição, alc
 | Modo | Cartas disponíveis | Preparação | Hordas e chefes |
 | --- | --- | --- | --- |
 | **Fácil** | Apenas cartas **N2** | 390 suprimentos e **3 Núcleos de Ascensão** já disponíveis para usar | Inimigos comuns têm 20% mais vida e dano; chefes têm 15% mais vida e dano. Hordas 15% maiores, escoltas 20% maiores, entradas 10% mais rápidas e poderes 15% mais frequentes. O arsenal N2 e os Núcleos mantêm o modo acessível, mas não existe botão nem atalho para remover tropas posicionadas. |
-| **Médio** | Cartas **N1 e N2** | 28 suprimentos e nenhum Núcleo inicial | Inimigos comuns têm 36% mais vida e dano; chefes têm 24% mais vida e dano. Hordas 24% maiores, escoltas 36% maiores, entradas 23% mais rápidas e poderes 14% mais frequentes. É um desafio central exigente, mas ainda permite montar respostas com N1 e N2. |
+| **Médio** | Cartas **N1 e N2** | 128 suprimentos e nenhum Núcleo inicial | Inimigos comuns têm 36% mais vida e dano; chefes têm 24% mais vida e dano. Hordas 24% maiores, escoltas 36% maiores, entradas 23% mais rápidas e poderes 14% mais frequentes. É um desafio central exigente, mas ainda permite montar respostas com N1 e N2. |
 | **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 66% mais vida e 58% mais dano; chefes têm 62% mais vida e 50% mais dano, com horda 39% maior, escoltas 54% maiores, entradas 32% mais rápidas e poderes 16% mais frequentes. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
 
 O Nível 3 não vira uma carta de seleção: ele é aplicado no campo por Núcleos. No Fácil, os três Núcleos iniciais equivalem aos upgrades N3 já liberados para a primeira missão; nos outros modos, eles continuam sendo conquistados ao derrotar chefes.
@@ -114,7 +115,7 @@ Exemplos:
 - Escopetas ganham impacto maior em grupo.
 - Snipers recebem dano de execução.
 - Bombardeiros podem disparar uma bazuca que rasga a linha.
-- Morteiros soltam bombas extras; lança-chamas mantém a queima em Cidade/Deserto e o Canhão de Maré segura inimigos encharcados na Praia.
+- Morteiros soltam bombas extras; o lança-chamas do Deserto intensifica a Queimadura, o Canhão de Veneno urbano amplia a nuvem tóxica e o Canhão de Maré segura inimigos encharcados na Praia.
 - Engenheiros aceleram a logística, reforçam o drone e posicionam uma Torreta de bala infinita à frente enquanto a ascensão durar.
 - Médicos curam e removem debuffs ao mesmo tempo.
 - Barreiras passam a disparar e explodem ao cair.
@@ -141,6 +142,12 @@ O **Atirador de Lancha N1** também é aquático: é uma carta de rifle de três
 
 O **Lançador de Água N1** e o **Canhão de Maré N2** são cartas terrestres exclusivas da Praia: ficam nas quatro faixas de areia, não no canal. Em vez de fogo, seus jatos de alta pressão atingem uma área curta, removem a queima e aplicam **Encharcado** por 2,4 segundos (3,6 s enquanto estiverem em N3), reduzindo em 32% a velocidade do zumbi. Eles têm dano menor que o lança-chamas, portanto servem para controlar avanço e abrir espaço, não para derreter uma horda sozinhos.
 
+### Armas elementais por região
+
+- **Cidade:** Pulverizador de Veneno N1 e Canhão de Veneno N2. Aplicam **Envenenado** por 4,2 segundos, com dano periódico, partículas verdes e 12% de redução de velocidade.
+- **Deserto:** Lança-Chamas de Mão N1 e Lança-Chamas N2. São as únicas cartas incendiárias; agora causam 14 e 20 de dano-base e aplicam **Queimadura**.
+- **Praia:** Lançador de Água N1 e Canhão de Maré N2. Aplicam **Encharcado**, não fogo nem veneno.
+
 ## Elenco e contrapontos
 
 Cada região oferece mais de dez cartas temáticas. As roupas e silhuetas são próprias de Cidade, Deserto e Praia.
@@ -149,7 +156,7 @@ Cada região oferece mais de dez cartas temáticas. As roupas e silhuetas são p
 - **Espingardas:** seguram corredores e saltadores perto da linha.
 - **Snipers:** lidam com blindados e subchefes, mas exigem munição e proteção.
 - **Explosivos:** quebram escudos e grupos; as granadas básicas podem acertar aliados próximos.
-- **Fogo e morteiro:** aplicam dano em área por meios opostos: cone contínuo ou impacto de arco.
+- **Elementais e morteiro:** Cidade usa veneno, Deserto usa fogo e Praia usa água; o morteiro continua como impacto explosivo de arco.
 - **Engenharia, rádio e medicina:** sustentam munição, economia, vida e remoção de corrosão/atordoamento. A Mecânica de Drones Costeira N1 é terrestre e opera o drone a partir do solo, sem plataforma de madeira.
 - **Contenção e minas:** compram tempo contra investidas, mas os saltadores conseguem ultrapassar a primeira linha. Carrinhos de contenção continuam separados visual e mecanicamente das minas que o jogador posiciona como carta.
 
@@ -157,7 +164,7 @@ Os zumbis possuem habilidades efetivas durante a batalha:
 
 - Corredor e Surfista fazem dash inicial.
 - Policial, Militar e Cowboy atiram de longe.
-- Porta-Escudo e Salva-Vidas reduzem fogo frontal.
+- Porta-Escudo e Salva-Vidas reduzem disparos frontais, mas fogo e veneno em área ajudam a quebrar a formação.
 - Cuspidor Ácido e Cuspidor de Sal corroem armas e ferem à distância.
 - Gritadores aceleram hordas.
 - Escavador cava em três etapas visíveis e passa apenas pela primeira tropa bloqueadora.
@@ -168,13 +175,13 @@ Os zumbis possuem habilidades efetivas durante a batalha:
 
 ## Animações e efeitos
 
-Os zumbis têm animação de caminhada, balanço, passo com poeira/respingo, dash, salto em arco, escavação em três etapas (entrar, túnel visível e emergir), rotação de atordoamento, dano de fogo/corrosão, barras de vida, morte com partículas e efeitos de habilidades. Tiros agora criam clarões e partículas de boca de arma; granadas, morteiros, chamas, torpedos, ácido, impactos, cura, Núcleos e os carrinhos-bomba também possuem efeitos em tempo real.
+Os zumbis têm animação de caminhada, balanço, passo com poeira/respingo, dash, salto em arco, escavação em três etapas (entrar, túnel visível e emergir), rotação de atordoamento, Queimadura, Envenenado, corrosão, barras de vida, morte com partículas e efeitos de habilidades. Tiros agora criam clarões e partículas de boca de arma; veneno, granadas, morteiros, chamas, torpedos, ácido, impactos, cura, Núcleos e os carrinhos-bomba também possuem efeitos em tempo real.
 
 O cenário não usa quadrados verdes coloridos: a área de posicionamento acompanha o cenário pintado. Uma borda fina só aparece sob o mouse para indicar o ponto de instalação; na Praia, a água recebe um brilho discreto.
 
 ## Tela de carregamento
 
-Antes de liberar o menu, o jogo abre uma tela de carregamento real e coloca em memória a **ilustração Beta 3 enviada para o carregamento**, a arte do menu, os três cenários, os **nove atlases** de personagens (N1, N2 e zumbis por região), as quatro contenções de terreno, as cinco minas independentes, a Mecânica de Drones N1, o Atirador de Lancha, os retratos exclusivos de carta e o novo retrato individual do Saltador — **34 recursos** no total. Assim, a mudança de tela e a entrada na missão não precisam carregar imagens pesadas no meio da partida.
+Antes de liberar o menu, o jogo abre uma tela de carregamento real e coloca em memória a **ilustração Beta 3 enviada para o carregamento**, a arte do menu, os três cenários, os **nove atlases** de personagens (N1, N2 e zumbis por região), as quatro contenções de terreno, as cinco minas independentes, a Mecânica de Drones N1, o Atirador de Lancha, os retratos exclusivos de carta, os retratos individuais do Saltador e Rastejante e a nova dupla urbana de veneno — **37 recursos** no total. Assim, a mudança de tela e a entrada na missão não precisam carregar imagens pesadas no meio da partida.
 
 ## Arquivos
 

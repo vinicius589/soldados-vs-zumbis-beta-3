@@ -275,12 +275,12 @@ DEFENSES = {
         "level": 2,
         "cost": 128,
         "hp": 144,
-        "damage": 14,
+        "damage": 20,
         "range": 3,
         "cooldown": 0.35,
         "ammo": 14,
         "sprite": 9,
-        "ability": "Cone de fogo até três blocos; aplica queima contínua em quem entra no alcance.",
+        "ability": "Exclusivo do Deserto. Cone de fogo reforçado até três blocos; aplica Queimadura contínua.",
     },
     "lanca_chamas_bolso": {
         "base": "Lança-Chamas de Mão",
@@ -288,12 +288,38 @@ DEFENSES = {
         "level": 1,
         "cost": 78,
         "hp": 108,
-        "damage": 10,
+        "damage": 14,
         "range": 1,
         "cooldown": 0.62,
         "ammo": 8,
         "sprite": 9,
-        "ability": "Jato curto e lento de um bloco. Barato para segurar a primeira aproximação, mas precisa de recarga.",
+        "ability": "Exclusivo do Deserto. Jato de fogo curto de um bloco; causa dano maior e aplica Queimadura.",
+    },
+    "lancador_veneno": {
+        "base": "Lançador de Veneno",
+        "role": "poison",
+        "level": 1,
+        "cost": 82,
+        "hp": 110,
+        "damage": 12,
+        "range": 1,
+        "cooldown": 0.62,
+        "ammo": 8,
+        "sprite": 9,
+        "ability": "Exclusivo da Cidade. Pulveriza veneno a um bloco e aplica Envenenado: dano contínuo e avanço 12% menor.",
+    },
+    "canhao_veneno": {
+        "base": "Canhão de Veneno",
+        "role": "poison",
+        "level": 2,
+        "cost": 132,
+        "hp": 146,
+        "damage": 18,
+        "range": 3,
+        "cooldown": 0.35,
+        "ammo": 14,
+        "sprite": 9,
+        "ability": "Exclusivo da Cidade. Nuvem tóxica em área até três blocos; mantém grupos Envenenados e mais lentos.",
     },
     "lancador_agua": {
         "base": "Lançador de Água",
@@ -545,6 +571,7 @@ PROMOTIONS = {
     "bombardeiro": "granadeiro",
     "morteiro_basico": "morteiro",
     "lanca_chamas_bolso": "lanca_chamas",
+    "lancador_veneno": "canhao_veneno",
     "lancador_agua": "canhao_mare",
     "mecanico": "engenheiro",
     "radio": "torre_radio",
@@ -584,7 +611,7 @@ DIFFICULTIES = {
         "levels": (1, 2),
         # Perfil definido pelo jogador: uma faixa central exigente, com N1/N2
         # e menos recurso para que posicionamento, recarga e counters importem.
-        "initial_supplies": 28,
+        "initial_supplies": 128,
         "initial_cores": 0,
         "enemy_hp": 1.36,
         "enemy_damage": 1.36,
@@ -633,13 +660,13 @@ REGION_ROSTERS = {
         ("engenheiro", "Engenheiro de Rua"),
         ("radio", "Operador de Rádio"),
         ("medico", "Socorrista de Quarentena"),
-        ("lanca_chamas", "Purificador Hazmat"),
+        ("canhao_veneno", "Canhão Tóxico Hazmat"),
         ("barreira_reativa", "Vanguarda Reativa"),
         ("mina_segura", "Mina de Sarjeta"),
         ("escopeteiro", "Espingarda de Mão"),
         ("sniper", "Vigia Recruta"),
         ("mecanico", "Mecânico de Rua"),
-        ("lanca_chamas_bolso", "Lança-Chamas de Mão"),
+        ("lancador_veneno", "Pulverizador de Veneno"),
         ("morteiro_basico", "Morteiro de Uma Bomba"),
         ("granadeiro", "Lançador de Quarentena"),
         ("barreira", "Barreira de Rua"),
@@ -712,6 +739,7 @@ CARD_ATLAS_INDEX = {
         "radio": 7, "torre_radio": 7,
         "medico": 8, "medico_experiente": 8,
         "lanca_chamas_bolso": 9, "lanca_chamas": 9,
+        "lancador_veneno": 9, "canhao_veneno": 9,
         "barreira": 10, "barreira_reativa": 10,
         "mina": 11, "mina_segura": 11,
     },
@@ -748,6 +776,8 @@ CARD_ATLAS_INDEX = {
 # recebe uma arte v7.8 que representa precisamente a classe indicada, em vez
 # de reutilizar uma arte de outra carta só por ocupar a mesma célula do atlas.
 CARD_ART_ASSETS = {
+    ("city", "lancador_veneno"): "city_poison_sprayer_n1",
+    ("city", "canhao_veneno"): "city_poison_cannon_n2",
     ("city", "morteiro_basico"): "city_mortar_n1",
     ("city", "morteiro"): "city_mortar_n2",
     ("desert", "mina"): "desert_mine_n1",
@@ -1227,6 +1257,10 @@ class Assets:
             # O Rastejante urbano não compartilha mais a silhueta do Corredor:
             # é um infectado baixo, sem pernas funcionais, com arte própria.
             ("zombie_crawler_beta3", ASSET_DIR / "zombie_crawler_beta3.png", "sprite"),
+            # A Cidade agora combate toxina com toxina. N1 e N2 têm silhuetas
+            # próprias, sem reaproveitar o lança-chamas exclusivo do Deserto.
+            ("city_poison_sprayer_n1", ASSET_DIR / "city_poison_sprayer_n1_beta3.png", "sprite"),
+            ("city_poison_cannon_n2", ASSET_DIR / "city_poison_cannon_n2_beta3.png", "sprite"),
             ("lane_bomb_cart", ASSET_DIR / "lane_bomb_cart_v72.png", "sprite"),
             ("desert_lane_bomb_cart", ASSET_DIR / "desert_lane_bomb_cart_v73.png", "sprite"),
             ("beach_land_bomb_cart", ASSET_DIR / "beach_land_bomb_cart_v73.png", "sprite"),
@@ -1435,6 +1469,7 @@ class Enemy:
     age: float = 0.0
     stun: float = 0.0
     burn: float = 0.0
+    poisoned: float = 0.0
     soaked: float = 0.0
     corrosion: float = 0.0
     jump_used: bool = False
@@ -1455,6 +1490,7 @@ class Enemy:
     rage: float = 0.0
     boss_announced: bool = False
     step_timer: float = 0.0
+    dot_timer: float = 0.0
 
     def __post_init__(self) -> None:
         profile = difficulty_profile(self.difficulty)
@@ -1961,13 +1997,23 @@ class Battle:
         if enemy.hp <= 0:
             return
         armor = float(enemy.data.get("armor", 0))
-        if "shield" in enemy.tags and effect not in {"flame", "explosion", "mortar"}:
+        if "shield" in enemy.tags and effect not in {"flame", "poison", "explosion", "mortar"}:
             armor = max(armor, 0.52)
         if source and source.ascended > 0:
             amount *= 1.55
         enemy.hp -= amount * (1 - armor)
         if effect == "flame":
+            was_burning = enemy.burn > 0
             enemy.burn = max(enemy.burn, 3.3)
+            if not was_burning:
+                self.texts.append(FloatingText("QUEIMADURA", enemy.x, enemy.y - 70, (255, 157, 60), 0.85))
+                self.pulse(enemy.x, enemy.y - 20, (246, 142, 45), 6)
+        elif effect == "poison":
+            was_poisoned = enemy.poisoned > 0
+            enemy.poisoned = max(enemy.poisoned, 4.2)
+            if not was_poisoned:
+                self.texts.append(FloatingText("ENVENENADO", enemy.x, enemy.y - 70, (156, 245, 91), 0.85))
+                self.pulse(enemy.x, enemy.y - 20, (132, 239, 80), 7)
         elif effect == "water":
             # Água não substitui o dano de fogo em força bruta: ela extingue
             # a queima e segura o avanço do alvo por uma janela curta.
@@ -2052,7 +2098,7 @@ class Battle:
         defender.attack_timer = float(defender.stats["cooldown"]) * (0.68 if ascending else 1.0)
         # Pequeno clarão e fumaça deixam a cadência das armas legível sem
         # substituir as artes dos soldados por uma animação pesada.
-        muzzle_color = (104, 221, 239) if role == "waterjet" else GOLD
+        muzzle_color = (104, 221, 239) if role == "waterjet" else ((129, 238, 82) if role == "poison" else GOLD)
         for _ in range(4 if role in {"shotgun", "grenade", "mortar"} else 2):
             self.particles.append(
                 Particle(
@@ -2103,6 +2149,11 @@ class Battle:
                 kind, radius, damage = "bazooka", BOARD.width, damage * 1.45
         elif role == "flame":
             kind, radius, effect = "flame", CELL_W * 0.55, "flame"
+            damage *= 0.70
+        elif role == "poison":
+            kind = "poison"
+            radius = CELL_W * (0.48 if level == 1 else 0.62)
+            effect = "poison"
             damage *= 0.62
         elif role == "waterjet":
             kind = "waterjet"
@@ -2114,7 +2165,7 @@ class Battle:
         elif role == "sub":
             kind, radius = "torpedo", CELL_W * 0.42
         self.projectiles.append(
-            Projectile(defender.x + 16, defender.y - 22, target, target.x, target.y - 16, damage, kind, defender, radius, True, 0.24 if kind in {"rifle", "flame", "waterjet"} else 0.42, effect=effect)
+            Projectile(defender.x + 16, defender.y - 22, target, target.x, target.y - 16, damage, kind, defender, radius, True, 0.24 if kind in {"rifle", "flame", "poison", "waterjet"} else 0.42, effect=effect)
         )
 
     def closest_enemy_at(self, row: int, x: float) -> Enemy | None:
@@ -2500,12 +2551,19 @@ class Battle:
             enemy.skill_timer -= dt
             enemy.stun = max(0.0, enemy.stun - dt)
             enemy.burn = max(0.0, enemy.burn - dt)
+            enemy.poisoned = max(0.0, enemy.poisoned - dt)
             enemy.soaked = max(0.0, enemy.soaked - dt)
             enemy.corrosion = max(0.0, enemy.corrosion - dt)
             enemy.rage = max(0.0, enemy.rage - dt)
             enemy.step_timer -= dt
-            if enemy.burn > 0:
-                self.take_enemy_damage(enemy, 5.2 * dt, "flame")
+            enemy.dot_timer -= dt
+            # Queimadura e Envenenado causam pulsos legíveis de dano. O dano
+            # periódico não renova o próprio estado, portanto ambos acabam no
+            # tempo previsto em vez de permanecerem ativos para sempre.
+            if enemy.dot_timer <= 0 and (enemy.burn > 0 or enemy.poisoned > 0):
+                dot_damage = (3.2 if enemy.burn > 0 else 0.0) + (2.25 if enemy.poisoned > 0 else 0.0)
+                self.take_enemy_damage(enemy, dot_damage, "status_tick")
+                enemy.dot_timer = 0.5
                 if enemy not in self.enemies:
                     continue
             if enemy.corrosion > 0:
@@ -2525,6 +2583,8 @@ class Battle:
                 speed *= 1.95
             if enemy.soaked > 0:
                 speed *= 0.68
+            if enemy.poisoned > 0:
+                speed *= 0.88
             blocker = self.blocker_for(enemy)
             if blocker:
                 if "dig" in enemy.tags and not enemy.dig_used:
@@ -2578,7 +2638,8 @@ class Battle:
             current_x = lerp(projectile.x, projectile.target_x, t)
             current_y = lerp(projectile.y, projectile.target_y, t) - (math.sin(t * math.pi) * 46 if projectile.kind in {"grenade", "mortar", "bazooka"} else 0)
             if random.random() < dt * 50:
-                color = GOLD if projectile.friendly else (119, 224, 96)
+                trail_colors = {"flame": (246, 142, 45), "poison": (128, 236, 78), "waterjet": (102, 224, 244)}
+                color = trail_colors.get(projectile.kind, GOLD) if projectile.friendly else (119, 224, 96)
                 self.particles.append(Particle(current_x, current_y, random.uniform(-20, 20), random.uniform(-20, 20), 0.25, 2.2, color))
             if t < 1:
                 continue
@@ -3611,6 +3672,10 @@ class Game:
         self.screen.blit(rendered, (int(enemy.x - scale[0] / 2), int(enemy.y - scale[1] + bob + vertical_offset)))
         if enemy.burn > 0:
             pygame.draw.circle(self.screen, (244, 133, 47), (int(enemy.x), int(enemy.y - 35)), 13, 2)
+        if enemy.poisoned > 0:
+            pygame.draw.circle(self.screen, (132, 239, 80), (int(enemy.x), int(enemy.y - 35)), 17, 2)
+            bubble_y = int(enemy.y - 58 - abs(math.sin(enemy.age * 5)) * 7)
+            pygame.draw.circle(self.screen, (184, 255, 105), (int(enemy.x + 12), bubble_y), 4, 1)
         if enemy.soaked > 0:
             pygame.draw.circle(self.screen, (100, 222, 241), (int(enemy.x), int(enemy.y - 35)), 15, 2)
         if enemy.corrosion > 0:
@@ -3637,6 +3702,7 @@ class Game:
                 "mortar": (255, 139, 78),
                 "bazooka": (246, 109, 60),
                 "flame": (246, 142, 45),
+                "poison": (132, 239, 80),
                 "waterjet": (102, 224, 244),
                 "torpedo": (74, 207, 237),
                 "drone": (123, 223, 207),
@@ -3755,6 +3821,8 @@ class Game:
             return ("LIMPA DEBUFF", f"RAIO {int(data['range'])}") if level == 1 else ("CURA +26", f"RAIO {int(data['range'])}")
         if role == "waterjet":
             return f"DANO {int(data['damage'])}", f"LENTO 32% • ALC {int(data['range'])}"
+        if role == "poison":
+            return f"DANO {int(data['damage'])}", f"VENENO 4.2s • ALC {int(data['range'])}"
         if role == "promoter":
             return "PROMOVE N1→N2", f"CICLO {int(data['cooldown'])}s"
         if role == "barrier":

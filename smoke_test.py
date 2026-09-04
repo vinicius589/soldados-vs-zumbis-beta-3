@@ -60,13 +60,13 @@ def main() -> None:
 
     # The reconstructed package preloads its menu, three scenes, six regional
     # atlases (N1 and N2), four containment devices, five standalone mine
-    # sprites, two bespoke coastal-unit sprites and eight dedicated card
-    # sprites (including the v7.9 coastal water-launcher pair), the exact
+    # sprites, two bespoke coastal-unit sprites and ten dedicated card
+    # sprites (including the coastal water pair and urban poison pair), the exact
     # Beta 3 loading reference plus standalone portraits for Saltador and
     # the urban Rastejante.
     # before the menu is made interactive.
     assert VERSION == "BETA 3"
-    assert game.assets.total == 35
+    assert game.assets.total == 37
     assert {"loading_beta3", "zombie_jumper_beta3", "zombie_crawler_beta3"} <= set(game.assets.images)
     assert game.assets.images["loading_beta3"].get_size() == (1280, 720)
     assert hashlib.sha256((ASSET_DIR / "loading_beta3_reference.png").read_bytes()).hexdigest() == "39f4406767231aed591a1738d12c67be1d60b220ba782d58ad9f4edc275f548f"
@@ -85,6 +85,8 @@ def main() -> None:
         "beach_boat_shooter",
         "beach_water_launcher_n1",
         "beach_water_cannon_n2",
+        "city_poison_sprayer_n1",
+        "city_poison_cannon_n2",
     } <= set(game.assets.images)
     assert set(CARD_ART_ASSETS.values()) <= set(game.assets.images)
     assert all(region in game.assets.unit_sprites for region in REGIONS)
@@ -103,6 +105,8 @@ def main() -> None:
     assert game.card_sprite("beach", "atirador_lancha", 5) is game.assets.images["beach_boat_shooter"]
     assert game.card_sprite("beach", "lancador_agua", 9) is game.assets.images["beach_water_launcher_n1"]
     assert game.card_sprite("beach", "canhao_mare", 9) is game.assets.images["beach_water_cannon_n2"]
+    assert game.card_sprite("city", "lancador_veneno", 9) is game.assets.images["city_poison_sprayer_n1"]
+    assert game.card_sprite("city", "canhao_veneno", 9) is game.assets.images["city_poison_cannon_n2"]
     for (region, key), asset_key in CARD_ART_ASSETS.items():
         assert game.card_sprite(region, key, regional_sprite_index(region, key)) is game.assets.images[asset_key]
     for region, mapping in CARD_ATLAS_INDEX.items():
@@ -136,6 +140,14 @@ def main() -> None:
         assert water_cards.isdisjoint(game.available_selection_keys(ground_region))
     assert water_cards <= set(game.regional_card_keys("beach"))
     assert water_cards <= set(game.available_selection_keys("beach"))
+    fire_cards = {"lanca_chamas_bolso", "lanca_chamas"}
+    poison_cards = {"lancador_veneno", "canhao_veneno"}
+    assert fire_cards <= set(game.regional_card_keys("desert"))
+    assert fire_cards.isdisjoint(game.regional_card_keys("city"))
+    assert fire_cards.isdisjoint(game.regional_card_keys("beach"))
+    assert poison_cards <= set(game.regional_card_keys("city"))
+    assert poison_cards.isdisjoint(game.regional_card_keys("desert"))
+    assert poison_cards.isdisjoint(game.regional_card_keys("beach"))
     game.region, game.dossier_kind = "city", "units"
     assert all(item.get("l1") not in water_cards and item.get("l2") not in water_cards for item in game.dossier_items())
     game.region = "beach"
@@ -264,7 +276,7 @@ def main() -> None:
     # é tocado por esta calibração.
     assert DIFFICULTIES["easy"]["initial_supplies"] == 390
     assert DIFFICULTIES["easy"]["enemy_hp"] == 1.20
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 28
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 128
     assert 1.30 < DIFFICULTIES["medium"]["enemy_hp"] < 1.40
     assert 1.20 < DIFFICULTIES["medium"]["boss_hp"] < 1.30
     assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.85
@@ -407,6 +419,41 @@ def main() -> None:
     soaked_x = soaked_enemy.x
     water_field.update_enemies(1.0)
     assert 0 < soaked_x - soaked_enemy.x < float(soaked_enemy.data["speed"]) * 0.70
+
+    # A Cidade possui agora uma dupla química independente. O projétil aplica
+    # Envenenado, causa dano periódico e reduz o avanço em 12%, enquanto as
+    # cartas de fogo ficam exclusivas do Deserto e receberam dano reforçado.
+    assert PROMOTIONS["lancador_veneno"] == "canhao_veneno"
+    assert DEFENSES["lanca_chamas_bolso"]["damage"] == 14
+    assert DEFENSES["lanca_chamas"]["damage"] == 20
+    poison_field = Battle(game, "city", [("lancador_veneno", "Pulverizador de Veneno")])
+    poisoner = Defender("lancador_veneno", "Pulverizador de Veneno", 0, 2, DEFENSES["lancador_veneno"], 9, region="city")
+    poisoned_enemy = Enemy("caminhante", 0, ENEMIES["caminhante"], "city", 4, x=poisoner.x + CELL_W * 0.6)
+    poison_field.defenders = [poisoner]
+    poison_field.enemies = [poisoned_enemy]
+    poison_field.update_defenders(0.1)
+    assert any(projectile.kind == "poison" and projectile.effect == "poison" for projectile in poison_field.projectiles)
+    poison_field.update_projectiles(0.3)
+    assert poisoned_enemy.poisoned > 4.0
+    poisoned_hp = poisoned_enemy.hp
+    poisoned_x = poisoned_enemy.x
+    poison_field.defenders = []
+    poison_field.update_enemies(0.5)
+    assert poisoned_enemy.hp < poisoned_hp
+    assert 0 < poisoned_x - poisoned_enemy.x < float(poisoned_enemy.data["speed"]) * 0.46
+
+    flame_field = Battle(game, "desert", [("lanca_chamas_bolso", "Lança-Chamas de Mão")])
+    burner = Defender("lanca_chamas_bolso", "Lança-Chamas de Mão", 0, 2, DEFENSES["lanca_chamas_bolso"], 10, region="desert")
+    burning_enemy = Enemy("caminhante", 0, ENEMIES["caminhante"], "desert", 4, x=burner.x + CELL_W * 0.6)
+    flame_field.defenders = [burner]
+    flame_field.enemies = [burning_enemy]
+    flame_field.update_defenders(0.1)
+    assert any(projectile.kind == "flame" and projectile.effect == "flame" for projectile in flame_field.projectiles)
+    flame_field.update_projectiles(0.3)
+    burn_time = burning_enemy.burn
+    flame_field.defenders = []
+    flame_field.update_enemies(0.5)
+    assert 0 < burning_enemy.burn < burn_time
 
     # A melee contact cannot make a close-range weapon forget the target.
     # The enemy has slipped a few pixels past the defender's center, yet the
