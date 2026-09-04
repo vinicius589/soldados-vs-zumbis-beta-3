@@ -65,10 +65,12 @@ As faces das cartas exibem custo e estatísticas objetivas (dano, munição, alc
 | Modo | Cartas disponíveis | Preparação | Hordas e chefes |
 | --- | --- | --- | --- |
 | **Fácil** | Apenas cartas **N2** | 390 suprimentos e **3 Núcleos de Ascensão** já disponíveis para usar | Inimigos comuns têm 20% mais vida e dano; chefes têm 15% mais vida e dano. Hordas 15% maiores, escoltas 20% maiores, entradas 10% mais rápidas e poderes 15% mais frequentes. O arsenal N2 e os Núcleos mantêm o modo acessível, mas não existe botão nem atalho para remover tropas posicionadas. |
-| **Médio** | Cartas **N1 e N2** | 128 suprimentos e nenhum Núcleo inicial | Inimigos comuns têm 38% mais vida e dano; chefes têm 28% mais vida e dano. Hordas 28% maiores, escoltas 38% maiores, entradas 25% mais rápidas e poderes 18% mais frequentes. É um desafio central exigente, mas ainda permite montar respostas com N1 e N2. |
+| **Médio** | Cartas **N1 e N2** | 28 suprimentos e nenhum Núcleo inicial | Inimigos comuns têm 36% mais vida e dano; chefes têm 24% mais vida e dano. Hordas 24% maiores, escoltas 36% maiores, entradas 23% mais rápidas e poderes 14% mais frequentes. É um desafio central exigente, mas ainda permite montar respostas com N1 e N2. |
 | **Difícil** | Apenas cartas **N1** | 105 suprimentos para exigir uma formação mais consciente | Zumbis comuns têm 66% mais vida e 58% mais dano; chefes têm 62% mais vida e 50% mais dano, com horda 39% maior, escoltas 54% maiores, entradas 32% mais rápidas e poderes 16% mais frequentes. É a modalidade veterana, ainda vencível com munição, suportes e posicionamento. |
 
 O Nível 3 não vira uma carta de seleção: ele é aplicado no campo por Núcleos. No Fácil, os três Núcleos iniciais equivalem aos upgrades N3 já liberados para a primeira missão; nos outros modos, eles continuam sendo conquistados ao derrotar chefes.
+
+Todas as cartas, em todos os mapas e modos, têm **10 segundos de recarga depois de serem posicionadas**. Enquanto a carta recarrega, ela fica escurecida e exibe na própria interface quantos segundos ainda faltam.
 
 ## Estrutura da campanha
 

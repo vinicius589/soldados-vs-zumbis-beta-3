@@ -13,6 +13,7 @@ import pygame
 from main import (
     ASSET_DIR,
     BOARD,
+    CARD_RECHARGE_SECONDS,
     CELL_W,
     BOSSES,
     CARD_ART_ASSETS,
@@ -215,6 +216,7 @@ def main() -> None:
                 # canal; Cidade e Deserto nunca chegam a tentar uma carta de água.
                 assert allowed
                 placement.place(row, 2)
+                assert placement.card_cooldowns[0] == CARD_RECHARGE_SECONDS == 10.0
                 defender = placement.defenders[0]
                 assert defender.key == key and defender.stats is DEFENSES[key]
                 assert defender.sprite_index == regional_sprite_index(region, key)
@@ -262,16 +264,14 @@ def main() -> None:
     # é tocado por esta calibração.
     assert DIFFICULTIES["easy"]["initial_supplies"] == 390
     assert DIFFICULTIES["easy"]["enemy_hp"] == 1.20
-    assert DIFFICULTIES["medium"]["initial_supplies"] == 128
-    assert 1.30 < DIFFICULTIES["medium"]["enemy_hp"] < 1.45
-    assert 1.20 < DIFFICULTIES["medium"]["boss_hp"] < 1.35
+    assert DIFFICULTIES["medium"]["initial_supplies"] == 28
+    assert 1.30 < DIFFICULTIES["medium"]["enemy_hp"] < 1.40
+    assert 1.20 < DIFFICULTIES["medium"]["boss_hp"] < 1.30
     assert DIFFICULTIES["easy"]["skill_cooldown"] == 0.85
     assert DIFFICULTIES["hard"]["enemy_hp"] > 1.5
     assert DIFFICULTIES["hard"]["enemy_damage"] > 1.5
-    # O Médio recebe a frequência de poderes explicitamente solicitada (18%),
-    # maior que a do Difícil, sem inverter os demais multiplicadores.
-    assert DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"]
-    assert DIFFICULTIES["medium"]["skill_cooldown"] < DIFFICULTIES["hard"]["skill_cooldown"]
+    # Os poderes seguem a nova escala final: Médio 14%, Fácil 15%, Difícil 16%.
+    assert DIFFICULTIES["hard"]["skill_cooldown"] < DIFFICULTIES["easy"]["skill_cooldown"] < DIFFICULTIES["medium"]["skill_cooldown"]
     game.difficulty = "medium"
     game.region = "city"
 

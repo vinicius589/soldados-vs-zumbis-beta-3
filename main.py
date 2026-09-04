@@ -25,6 +25,7 @@ SAVE_PATH = ROOT / "campanha_v7.json"
 WIDTH, HEIGHT = 1280, 720
 FPS = 60
 VERSION = "BETA 3"
+CARD_RECHARGE_SECONDS = 10.0
 ROWS, COLS = 5, 9
 BOARD = pygame.Rect(164, 288, 1090, 382)
 CELL_W = BOARD.width / COLS
@@ -583,16 +584,16 @@ DIFFICULTIES = {
         "levels": (1, 2),
         # Perfil definido pelo jogador: uma faixa central exigente, com N1/N2
         # e menos recurso para que posicionamento, recarga e counters importem.
-        "initial_supplies": 128,
+        "initial_supplies": 28,
         "initial_cores": 0,
-        "enemy_hp": 1.38,
-        "enemy_damage": 1.38,
-        "boss_hp": 1.28,
-        "boss_damage": 1.28,
-        "spawn_count": 1.28,
-        "spawn_wait": 0.75,
-        "escort_count": 1.38,
-        "skill_cooldown": 0.82,
+        "enemy_hp": 1.36,
+        "enemy_damage": 1.36,
+        "boss_hp": 1.24,
+        "boss_damage": 1.24,
+        "spawn_count": 1.24,
+        "spawn_wait": 0.77,
+        "escort_count": 1.36,
+        "skill_cooldown": 0.86,
         "accent": GOLD,
         "summary": "Cartas N1/N2, pouco recurso e pressão constante de campanha.",
     },
@@ -1654,7 +1655,9 @@ class Battle:
         sprite_index = regional_sprite_index(self.region, key)
         defender = Defender(key, display, row, col, data, sprite_index, region=self.region)
         self.defenders.append(defender)
-        self.card_cooldowns[self.selected_card] = 0.55
+        # Toda carta retorna após o mesmo intervalo legível: não há exceção
+        # por mapa, nível ou função, e a barra conta os 10 segundos completos.
+        self.card_cooldowns[self.selected_card] = CARD_RECHARGE_SECONDS
         self.pulse(defender.x, defender.y, self.region_color(), 20)
         self.announce(f"{display} em posição.", 1.2, self.region_color())
 
@@ -3454,6 +3457,7 @@ class Game:
                 dark = pygame.Surface(rect.size, pygame.SRCALPHA)
                 dark.fill((0, 0, 0, 125))
                 self.screen.blit(dark, rect)
+                self.draw_text(f"{math.ceil(battle.card_cooldowns[index])}s", self.fonts.small, WHITE, rect.center, "center", True)
             self.blit_sprite(self.card_sprite(battle.region, key, int(data["sprite"])), rect.x + 5, rect.y + 25, 44, 56)
             self.draw_text(str(index + 1), self.fonts.tiny, GOLD, (rect.x + 7, rect.y + 6))
             metric_a, metric_b = self.card_metrics(data)
