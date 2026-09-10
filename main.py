@@ -1,8 +1,10 @@
-"""Soldados vs Zumbis — Reconstrução v7.
+"""Soldados vs Zumbis — Beta 4.
 
-Um tower defense original em Pygame. Esta versão usa somente as artes v7
-carregadas durante a tela de abertura e implementa campanha, cartas, munição,
-suporte externo, chefes, Núcleos de Ascensão e elencos temáticos por região.
+Um tower defense original em Pygame. A Beta 4 preserva campanha, cartas,
+munição com recarga própria, chefes, Núcleos de Ascensão e elencos temáticos por
+região, mas introduz um sistema próprio de animação orientado por estados.
+Nenhum código ou arte externa é incorporado: cada estado é atualizado por
+tempo real e renderizado a partir dos recursos originais do projeto.
 """
 
 from __future__ import annotations
@@ -18,18 +20,33 @@ from typing import Callable
 
 import pygame
 
+from opengl_presenter import ActorCommand, OpenGLPresenter
+
 
 ROOT = Path(__file__).resolve().parent
 ASSET_DIR = ROOT / "assets" / "v7"
 SAVE_PATH = ROOT / "campanha_v7.json"
 WIDTH, HEIGHT = 1280, 720
 FPS = 60
-VERSION = "BETA 3"
+VERSION = "BETA 4"
 CARD_RECHARGE_SECONDS = 10.0
-ROWS, COLS = 5, 9
-BOARD = pygame.Rect(164, 288, 1090, 382)
+ROWS, COLS = 4, 9
+# Limite horizontal comum e extensão vertical total das três arenas. As
+# faixas não usam uma grade vertical genérica: cada cenário possui limites
+# calibrados a partir das pistas realmente pintadas na arte.
+BOARD = pygame.Rect(164, 170, 1090, 540)
 CELL_W = BOARD.width / COLS
 CELL_H = BOARD.height / ROWS
+LANE_BOUNDS: dict[str, tuple[int, int, int, int, int]] = {
+    # As três pinturas e a lógica usam quatro faixas largas e idênticas.
+    # Isso dá respiro a corpos inteiros e evita diferenças artificiais de
+    # escala entre a primeira e a última linha.
+    "city": (170, 305, 440, 575, 710),
+    "desert": (170, 305, 440, 575, 710),
+    "beach": (170, 305, 440, 575, 710),
+}
+BEACH_WATER_ROWS = frozenset({1, 2})
+LANE_BOMB_HOME_X = BOARD.left + 42
 WHITE = (242, 244, 239)
 INK = (15, 20, 25)
 GOLD = (240, 187, 72)
@@ -44,6 +61,89 @@ def clamp(value: float, low: float, high: float) -> float:
 
 def lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
+
+
+@dataclass
+class ActorMotion:
+    """Estado visual temporizado de uma unidade em campo.
+
+    A referência técnica analisada separava os sprites em sequências de
+    caminhada e ataque. Aqui o mesmo princípio é refeito sem depender de uma
+    contagem fixa de arquivos ou de um frame mágico: a simulação informa um
+    estado, o estado avança com ``dt`` e o desenho calcula a pose correspondente.
+    Isso mantém combate e animação sincronizados inclusive quando a taxa de
+    quadros varia.
+    """
+
+    state: str = "spawn"
+    state_elapsed: float = 0.0
+    event_left: float = 0.28
+    hit_flash: float = 0.0
+
+    def advance(self, dt: float, fallback: str) -> None:
+        self.state_elapsed += dt
+        self.hit_flash = max(0.0, self.hit_flash - dt)
+        if self.event_left > 0:
+            self.event_left = max(0.0, self.event_left - dt)
+            if self.event_left > 0:
+                return
+        if self.state != fallback:
+            self.state = fallback
+            self.state_elapsed = 0.0
+
+    def trigger(self, state: str, duration: float) -> None:
+        """Inicia uma ação curta (tiro, golpe, habilidade ou impacto)."""
+        if self.state != state:
+            self.state = state
+            self.state_elapsed = 0.0
+            # Uma ação nova não deve herdar o tempo que restava de outra
+            # pose (por exemplo, o nascer da unidade não pode alongar um
+            # disparo que acabou de acontecer).
+            self.event_left = max(0.0, duration)
+            return
+        self.event_left = max(self.event_left, max(0.0, duration))
+
+    def loop(self, state: str) -> None:
+        """Troca para um estado contínuo que deve prevalecer neste quadro."""
+        if self.state != state:
+            self.state = state
+            self.state_elapsed = 0.0
+        self.event_left = 0.0
+
+    def flash(self, seconds: float = 0.13) -> None:
+        self.hit_flash = max(self.hit_flash, seconds)
+
+    def phase(self, fps: float = 8.0, frames: int = 4) -> int:
+        """Índice estável de um ciclo visual, independente do FPS real."""
+        return int(self.state_elapsed * fps) % max(1, frames)
+
+
+@dataclass
+class VisualEffect:
+    """Efeito curto de impacto/atividade, separado da lógica do projétil."""
+
+    kind: str
+    x: float
+    y: float
+    color: tuple[int, int, int]
+    duration: float = 0.34
+    elapsed: float = 0.0
+    scale: float = 1.0
+
+
+@dataclass
+class DefeatAnimation:
+    """Mantém a silhueta por alguns quadros depois da morte lógica."""
+
+    sprite: pygame.Surface
+    x: float
+    y: float
+    width: float
+    height: float
+    water: bool = False
+    duration: float = 0.48
+    elapsed: float = 0.0
+    enemy: bool = False
 
 
 def enemy_wave_scale(wave: int) -> float:
@@ -77,15 +177,38 @@ def boss_damage_scale(wave: int) -> float:
     return 0.62 + wave * 0.025
 
 
-def terrain_y(region: str, row: int, x: float) -> float:
-    """Posiciona os pés nas superfícies pintadas de cada cenário.
+def lane_bounds(region: str, row: int) -> tuple[float, float]:
+    """Limites reais da faixa desenhada no cenário selecionado."""
+    bounds = LANE_BOUNDS.get(region, LANE_BOUNDS["city"])
+    index = int(clamp(row, 0, ROWS - 1))
+    return float(bounds[index]), float(bounds[index + 1])
 
-    Os três fundos atuais foram alinhados como campos táticos quase
-    ortogonais, então as faixas permanecem horizontais. Isso evita inimigos
-    caminhando sobre céu, construções, paredões ou horizonte.
+
+def terrain_y(region: str, row: int, x: float) -> float:
+    """Retorna a linha de contato dos pés, rodas ou casco com o terreno.
+
+    ``x`` permanece na assinatura porque inimigos móveis consultam esta
+    função a cada quadro. As rotas desta versão são horizontais: assim um
+    zumbi nunca deriva verticalmente nem abandona a linha em que nasceu.
     """
-    y = BOARD.top + (row + 0.5) * CELL_H
-    return min(HEIGHT - 26, y)
+    top, bottom = lane_bounds(region, row)
+    return (top + bottom) / 2.0
+
+
+def lane_depth(region: str, row: int) -> float:
+    """Escala de perspectiva: faixas distantes menores, frente maior."""
+    first = terrain_y(region, 0, BOARD.left)
+    last = terrain_y(region, ROWS - 1, BOARD.left)
+    position = terrain_y(region, row, BOARD.left)
+    progress = 0.0 if last == first else (position - first) / (last - first)
+    # O novo litoral foi pintado com projeção quase ortográfica; nele uma
+    # variação extrema fazia a primeira faixa parecer miniatura e a última,
+    # gigante. Cidade e Deserto preservam a perspectiva mais profunda.
+    # A primeira faixa fica logo abaixo da aba superior: 0,58 também garante
+    # que cabeça/arma não sejam cortadas pelo HUD. Na frente, 0,96 evita o
+    # efeito de gigante observado no cenário costeiro anterior.
+    rear, front = (0.86, 0.98) if region == "beach" else (0.84, 1.0)
+    return lerp(rear, front, clamp(progress, 0.0, 1.0))
 
 
 def cell_center(row: int, col: int, region: str = "city") -> tuple[float, float]:
@@ -93,12 +216,13 @@ def cell_center(row: int, col: int, region: str = "city") -> tuple[float, float]
     return x, terrain_y(region, row, x)
 
 
-def cell_rect(row: int, col: int) -> pygame.Rect:
+def cell_rect(row: int, col: int, region: str = "city") -> pygame.Rect:
+    top, bottom = lane_bounds(region, row)
     return pygame.Rect(
         int(BOARD.left + col * CELL_W),
-        int(BOARD.top + row * CELL_H),
+        int(top),
         int(CELL_W),
-        int(CELL_H),
+        int(bottom - top),
     )
 
 
@@ -111,39 +235,39 @@ REGIONS = {
         "name": "Cidade Quarentenada",
         "short": "CIDADE",
         "tag": "Tóxico urbano",
-        "bg": "city_grounded.png",
+        "bg": "city_beta4_four_lanes.png",
         "soldiers": "city_soldiers_atlas.png",
         "soldiers_l2": "city_soldiers_l2_atlas_v74.png",
         "zombies": "city_zombies_atlas.png",
         "accent": (90, 207, 166),
         "unlock_after": None,
-        "description": "Asfalto verdadeiro, prédios em ruína e uma névoa ácida que alimenta os infectados.",
+        "description": "Uma avenida de quarentena com quatro pistas largas de asfalto, base de emergência e ruínas tóxicas nas bordas.",
         "bosses": ("bruto_demolidor", "comandante_mortos", "cuspidor_alfa"),
     },
     "desert": {
         "name": "Deserto das Ruínas",
         "short": "DESERTO",
         "tag": "Magia e escavação",
-        "bg": "desert.png",
+        "bg": "desert_beta4_four_lanes.png",
         "soldiers": "desert_soldiers_atlas.png",
         "soldiers_l2": "desert_soldiers_l2_atlas_v74.png",
         "zombies": "desert_zombies_atlas.png",
         "accent": (235, 179, 76),
         "unlock_after": "city",
-        "description": "Uma estrada de terra leva às pirâmides; escavadores e magia antiga quebram a formação.",
+        "description": "Quatro trilhas largas de areia compactada cruzam uma expedição militar rumo às ruínas e pirâmides antigas.",
         "bosses": ("mutante_ruinas", "necromante", "colosso_mutante"),
     },
     "beach": {
         "name": "Praia de Maré Morta",
         "short": "PRAIA",
         "tag": "Maré e costa",
-        "bg": "beach_banded_v72.png",
-        "soldiers": "beach_soldiers_atlas.png",
-        "soldiers_l2": "beach_soldiers_l2_atlas_v74.png",
-        "zombies": "beach_zombies_atlas.png",
+        "bg": "beach_beta4_four_lanes.png",
+        "soldiers": "beach_soldiers_beta4_rebuilt.png",
+        "soldiers_l2": "beach_soldiers_l2_beta4_rebuilt.png",
+        "zombies": "beach_zombies_beta4_rebuilt.png",
         "accent": (78, 177, 232),
         "unlock_after": "desert",
-        "description": "Duas faixas de areia, um canal central e mais duas faixas de areia formam uma defesa costeira legível.",
+        "description": "Uma faixa de areia, duas rotas de água e uma faixa de areia formam a defesa costeira em quatro linhas.",
         "bosses": ("tide_brute", "cacador_abissal", "leviata"),
     },
 }
@@ -176,7 +300,7 @@ DEFENSES = {
         "cooldown": 0.60,
         "ammo": 18,
         "sprite": 1,
-        "ability": "M16: quatro blocos de alcance e fogo sustentado; depende de munição externa.",
+        "ability": "M16: quatro blocos de alcance e fogo sustentado. Ao esvaziar, executa uma recarga própria temporizada.",
     },
     "escopeteiro": {
         "base": "Espingarda de Mão",
@@ -360,32 +484,6 @@ DEFENSES = {
         "sprite": 5,
         "ability": "Lança uma única bomba em área e recarrega muito devagar. É o estágio inicial do morteiro.",
     },
-    "mecanico": {
-        "base": "Mecânico",
-        "role": "reload",
-        "level": 1,
-        "cost": 65,
-        "hp": 102,
-        "damage": 0,
-        "range": 1,
-        "cooldown": 4.20,
-        "ammo": 0,
-        "sprite": 6,
-        "ability": "Entrega munição às tropas próximas. Não atira e não gera créditos.",
-    },
-    "engenheiro": {
-        "base": "Engenheiro",
-        "role": "reload",
-        "level": 2,
-        "cost": 118,
-        "hp": 122,
-        "damage": 12,
-        "range": 2,
-        "cooldown": 2.90,
-        "ammo": 0,
-        "sprite": 6,
-        "ability": "Recarrega uma área de dois blocos e solta um drone de ataque leve.",
-    },
     "radio": {
         "base": "Operador de Rádio",
         "role": "radio",
@@ -411,32 +509,6 @@ DEFENSES = {
         "ammo": 0,
         "sprite": 7,
         "ability": "Sinal reforçado: suprimento e ritmo médios, sem travar a economia no início.",
-    },
-    "medico": {
-        "base": "Ajudante Médico",
-        "role": "medic",
-        "level": 1,
-        "cost": 65,
-        "hp": 94,
-        "damage": 0,
-        "range": 2,
-        "cooldown": 4.30,
-        "ammo": 0,
-        "sprite": 8,
-        "ability": "Remove corrosão, veneno e atordoamento, mas não restaura vida.",
-    },
-    "medico_experiente": {
-        "base": "Médico de Campo",
-        "role": "medic",
-        "level": 2,
-        "cost": 115,
-        "hp": 112,
-        "damage": 0,
-        "range": 2,
-        "cooldown": 3.35,
-        "ammo": 0,
-        "sprite": 8,
-        "ability": "Cura vida dos feridos. O Núcleo a transforma em médica experiente, que também limpa debuffs.",
     },
     "barreira": {
         "base": "Barreira de Contenção",
@@ -562,6 +634,37 @@ DEFENSES = {
 }
 
 
+# Tempo de troca de carregador/cano por família de arma. A recarga automática
+# só começa depois da última pose de disparo e deixa a unidade sem atacar. O
+# intervalo intencional de 8 a 15 segundos substitui por completo a antiga
+# dependência de Mecânico/Engenheiro de munição.
+WEAPON_RELOAD_SECONDS: dict[str, tuple[float, float]] = {
+    "rifle": (9.0, 8.0),
+    "shotgun": (11.5, 9.5),
+    "sniper": (13.0, 11.0),
+    "grenade": (13.5, 11.5),
+    "mortar": (15.0, 13.0),
+    "flame": (10.5, 9.0),
+    "poison": (10.5, 9.0),
+    "waterjet": (10.0, 8.5),
+    "boat": (10.5, 9.0),
+    "sub": (14.5, 13.0),
+}
+
+
+def weapon_reload_seconds(stats: dict, ascended: bool = False) -> float:
+    """Retorna a recarga visível da arma sem sair da faixa de 8–15 s."""
+    role = str(stats.get("role", ""))
+    level = 2 if int(stats.get("level", 1)) >= 2 else 1
+    pair = WEAPON_RELOAD_SECONDS.get(role)
+    if pair is None or int(stats.get("ammo", 0)) <= 0:
+        return 0.0
+    seconds = pair[level - 1]
+    if ascended:
+        seconds = max(8.0, seconds * 0.82)
+    return float(clamp(seconds, 8.0, 15.0))
+
+
 # Promoção permanente de campo. As cartas N1 e N2 continuam livres na seleção;
 # o Sargento só economiza uma segunda colocação quando sobrevive ao ciclo inteiro.
 PROMOTIONS = {
@@ -573,9 +676,7 @@ PROMOTIONS = {
     "lanca_chamas_bolso": "lanca_chamas",
     "lancador_veneno": "canhao_veneno",
     "lancador_agua": "canhao_mare",
-    "mecanico": "engenheiro",
     "radio": "torre_radio",
-    "medico": "medico_experiente",
     "barreira": "barreira_reativa",
     "mina": "mina_segura",
     "atirador_lancha": "lancha",
@@ -613,6 +714,9 @@ DIFFICULTIES = {
         # e menos recurso para que posicionamento, recarga e counters importem.
         "initial_supplies": 128,
         "initial_cores": 0,
+        # Pequeno degrau pedido para a Beta 4: aumenta a pressão em somente
+        # dois pontos e encurta discretamente as entradas. O começo continua
+        # legível; a diferença fica mais clara quando o elenco especial abre.
         "enemy_hp": 1.36,
         "enemy_damage": 1.36,
         "boss_hp": 1.24,
@@ -657,15 +761,12 @@ REGION_ROSTERS = {
         ("escopeteiro_regular", "Escopeteiro de Brecha"),
         ("sniper_regular", "Vigia de Telhado"),
         ("bombardeiro", "Granadeiro de Quarentena"),
-        ("engenheiro", "Engenheiro de Rua"),
         ("radio", "Operador de Rádio"),
-        ("medico", "Socorrista de Quarentena"),
         ("canhao_veneno", "Canhão Tóxico Hazmat"),
         ("barreira_reativa", "Vanguarda Reativa"),
         ("mina_segura", "Mina de Sarjeta"),
         ("escopeteiro", "Espingarda de Mão"),
         ("sniper", "Vigia Recruta"),
-        ("mecanico", "Mecânico de Rua"),
         ("lancador_veneno", "Pulverizador de Veneno"),
         ("morteiro_basico", "Morteiro de Uma Bomba"),
         ("granadeiro", "Lançador de Quarentena"),
@@ -680,9 +781,7 @@ REGION_ROSTERS = {
         ("sniper_regular", "Atirador das Dunas"),
         ("morteiro", "Morteiro de Ruínas"),
         ("granadeiro", "Granadeiro de Escavação"),
-        ("engenheiro", "Engenheiro de Campo"),
         ("torre_radio", "Torre de Rádio Solar"),
-        ("medico_experiente", "Médica de Caravana"),
         ("lanca_chamas", "Lança-Chamas do Oásis"),
         ("barreira_reativa", "Caminhão de Contenção"),
         ("mina_segura", "Mina Solar"),
@@ -690,7 +789,6 @@ REGION_ROSTERS = {
         ("sniper", "Vigia das Dunas"),
         ("bombardeiro", "Bombardeiro do Oásis"),
         ("morteiro_basico", "Morteiro de Uma Bomba"),
-        ("mecanico", "Mecânico de Caravana"),
         ("radio", "Operador de Rádio de Campo"),
         ("barreira", "Barreira de Caravana"),
         ("instrutor", "Sargento de Promoção das Dunas"),
@@ -702,9 +800,7 @@ REGION_ROSTERS = {
         ("sniper_regular", "Sniper Costeiro"),
         ("bombardeiro", "Arpoador Explosivo"),
         ("morteiro_basico", "Morteiro de Salva Costeiro"),
-        ("engenheiro", "Engenheiro de Píer"),
         ("torre_radio", "Torre de Sinal Marítimo"),
-        ("medico_experiente", "Médica de Maré"),
         ("canhao_mare", "Canhão de Maré Costeiro"),
         ("barreira_reativa", "Boia de Contenção"),
         ("bomba_agua", "Bomba de Água"),
@@ -714,9 +810,7 @@ REGION_ROSTERS = {
         ("escopeteiro", "Espingarda de Resgate"),
         ("sniper", "Vigia Costeiro"),
         ("granadeiro", "Granadeiro de Arpão"),
-        ("mecanico", "Mecânica de Drones Costeira"),
         ("radio", "Operador de Rádio Costeiro"),
-        ("medico", "Ajudante de Maré"),
         ("barreira", "Boia de Contenção Básica"),
         ("mina", "Mina de Areia"),
         ("instrutor", "Sargento de Promoção da Guarda-Costa"),
@@ -735,9 +829,7 @@ CARD_ATLAS_INDEX = {
         "sniper": 4, "sniper_regular": 4,
         "bombardeiro": 5, "granadeiro": 5,
         "morteiro_basico": 5, "morteiro": 5,
-        "mecanico": 6, "engenheiro": 6,
         "radio": 7, "torre_radio": 7,
-        "medico": 8, "medico_experiente": 8,
         "lanca_chamas_bolso": 9, "lanca_chamas": 9,
         "lancador_veneno": 9, "canhao_veneno": 9,
         "barreira": 10, "barreira_reativa": 10,
@@ -749,9 +841,7 @@ CARD_ATLAS_INDEX = {
         "sniper": 4, "sniper_regular": 4,
         "morteiro_basico": 5, "morteiro": 5,
         "bombardeiro": 6, "granadeiro": 5,
-        "mecanico": 7, "engenheiro": 6,
         "radio": 8, "torre_radio": 7,
-        "medico": 9, "medico_experiente": 8,
         "lanca_chamas_bolso": 10, "lanca_chamas": 9,
         "barreira": 11, "barreira_reativa": 10,
         "mina": 11, "mina_segura": 11,
@@ -762,9 +852,7 @@ CARD_ATLAS_INDEX = {
         "sniper": 4, "sniper_regular": 4,
         "morteiro_basico": 5, "morteiro": 5,
         "bombardeiro": 7, "granadeiro": 5,
-        "mecanico": 8, "engenheiro": 6,
         "radio": 9, "torre_radio": 7,
-        "medico": 10, "medico_experiente": 8,
         "lancador_agua": 9, "canhao_mare": 9,
         "barreira": 11, "barreira_reativa": 10,
         "mina": 11, "mina_segura": 11,
@@ -1039,7 +1127,7 @@ ENEMIES = {
         "damage": 18,
         "attack": 1.0,
         "sprite": 5,
-        "ability": "Dispara de longe na costa e coloca pressão em médicos e rádio.",
+        "ability": "Dispara de longe na costa e pressiona o rádio e a retaguarda.",
         "tags": ("gun",),
     },
     "sal_cuspidor": {
@@ -1174,6 +1262,24 @@ REGION_ENEMIES = {
     "beach": ("boia", "surfista", "salva_vidas", "mergulhador", "cacador", "cowboy", "sal_cuspidor", "mar_gritador", "nadador", "saltador"),
 }
 
+# A Praia tem um canal real na terceira faixa. Criaturas de maré não podem
+# simplesmente reaproveitar qualquer linha terrestre, pois isso quebraria a
+# leitura do cenário e faria nadadores parecerem caminhar sobre a areia.
+# Cowboy e Saltador são ameaças costeiras terrestres; o restante desta lista
+# nasce exclusivamente no canal.
+BEACH_WATER_ENEMIES = frozenset(
+    {
+        "boia",
+        "surfista",
+        "salva_vidas",
+        "mergulhador",
+        "cacador",
+        "sal_cuspidor",
+        "mar_gritador",
+        "nadador",
+    }
+)
+
 
 def wave_enemy_pool(region: str, wave: int) -> tuple[str, ...]:
     """Retorna o elenco regional já liberado em uma onda, sem sorteio.
@@ -1232,7 +1338,10 @@ class Assets:
         self.unit_sprites: dict[str, list[pygame.Surface]] = {}
         self.unit_l2_sprites: dict[str, list[pygame.Surface]] = {}
         self.zombie_sprites: dict[str, list[pygame.Surface]] = {}
+        self.animation_frames: dict[str, list[pygame.Surface]] = {}
+        self.effect_frames: dict[str, list[pygame.Surface]] = {}
         self.scale_cache: dict[tuple[int, int, int], pygame.Surface] = {}
+        self.trim_cache: dict[int, pygame.Surface] = {}
         self.jobs: list[tuple[str, Path, str]] = []
         for region, info in REGIONS.items():
             self.jobs.extend(
@@ -1251,6 +1360,26 @@ class Assets:
         # Cada cenário usa sua própria contenção de última linha. Todas são
         # carregadas antes do menu, sem travar quando uma faixa é invadida.
         self.jobs[2:2] = [
+            # O Caminhante urbano inaugura a cadeia de animação desenhada:
+            # oito contatos/passagens originais, todos pré-carregados antes
+            # da partida e ainda deformados suavemente pela malha OpenGL.
+            ("city_walker_walk", ASSET_DIR / "city_walker_walk_sheet_beta4.png", "animation"),
+            ("desert_digger_states", ASSET_DIR / "desert_digger_state_sheet_beta4.png", "animation"),
+            ("beach_swimmer_walk", ASSET_DIR / "beach_swimmer_walk_sheet_beta4.png", "animation"),
+            # Quatro poses inteiras por chefe: dois contatos de movimento,
+            # ataque e poder. Ao contrário do atlas geral, nenhum martelo,
+            # membro ou efeito atravessa o limite de outra célula.
+            ("city_boss_actions", ASSET_DIR / "city_boss_actions_beta4.png", "animation_4x3"),
+            ("desert_boss_actions", ASSET_DIR / "desert_boss_actions_beta4.png", "animation_4x3"),
+            ("beach_boss_actions", ASSET_DIR / "beach_boss_actions_beta4.png", "animation_4x3"),
+            # Matéria e impacto rasterizados substituem linhas, polígonos,
+            # anéis e bolinhas usados como efeitos nas versões anteriores.
+            ("elemental_effects", ASSET_DIR / "elemental_effects_sheet_beta4.png", "effects_4x3"),
+            ("combat_effects", ASSET_DIR / "combat_effects_sheet_beta4.png", "effects_4x3"),
+            ("ability_effects", ASSET_DIR / "ability_effects_sheet_beta4.png", "effects_4x3"),
+            # Munições e projéteis são objetos pintados de verdade. Não há
+            # mais círculos, riscos ou polígonos fingindo ser balas no campo.
+            ("projectile_sprites", ASSET_DIR / "projectile_sprites_sheet_beta4.png", "effects_4x3"),
             # Retrato individual da Beta 3: o Saltador deixa de trazer uma
             # pilastra/obstáculo embutido e a animação faz o salto real.
             ("zombie_jumper_beta3", ASSET_DIR / "zombie_jumper_beta3.png", "sprite"),
@@ -1261,6 +1390,9 @@ class Assets:
             # próprias, sem reaproveitar o lança-chamas exclusivo do Deserto.
             ("city_poison_sprayer_n1", ASSET_DIR / "city_poison_sprayer_n1_beta3.png", "sprite"),
             ("city_poison_cannon_n2", ASSET_DIR / "city_poison_cannon_n2_beta3.png", "sprite"),
+            # Efeito original da Beta 4: a animação de veneno tem uma arte de
+            # impacto própria, em vez de repetir apenas círculos genéricos.
+            ("beta4_toxic_impact", ASSET_DIR / "beta4_toxic_impact.png", "sprite"),
             ("lane_bomb_cart", ASSET_DIR / "lane_bomb_cart_v72.png", "sprite"),
             ("desert_lane_bomb_cart", ASSET_DIR / "desert_lane_bomb_cart_v73.png", "sprite"),
             ("beach_land_bomb_cart", ASSET_DIR / "beach_land_bomb_cart_v73.png", "sprite"),
@@ -1282,9 +1414,8 @@ class Assets:
             ("beach_water_cannon_n2", ASSET_DIR / "beach_water_cannon_n2_v79.png", "sprite"),
             ("beach_mortar_n1", ASSET_DIR / "beach_mortar_n1_v78.png", "sprite"),
             ("beach_mortar_n2", ASSET_DIR / "beach_mortar_n2_v78.png", "sprite"),
-            # A mecânica de drones N1 é terrestre e o novo atirador usa uma
-            # lancha própria. Nenhuma dessas cartas fica sobre ponte ou cais.
-            ("beach_drone_operator_n1", ASSET_DIR / "beach_drone_operator_n1_v76.png", "sprite"),
+            # O Atirador de Lancha continua aquático. A antiga Mecânica de
+            # Drones não é mais carregada: a recarga agora pertence à arma.
             ("beach_boat_shooter", ASSET_DIR / "beach_boat_shooter_v76.png", "sprite"),
         ]
         self.loaded = 0
@@ -1305,12 +1436,18 @@ class Assets:
         try:
             source = pygame.image.load(str(path)).convert_alpha()
             if kind == "image":
-                if key == "beach_bg":
-                    self.images[key] = self.fit_beach_background(source)
+                if key.endswith("_bg"):
+                    self.images[key] = self.fit_four_lane_background(source, key.split("_")[0])
                 else:
                     self.images[key] = pygame.transform.smoothscale(source, (WIDTH, HEIGHT))
             elif kind == "sprite":
                 self.images[key] = source
+            elif kind == "animation":
+                self.animation_frames[key] = self.slice_grid(source, 4, 2)
+            elif kind == "animation_4x3":
+                self.animation_frames[key] = self.slice_grid(source, 4, 3)
+            elif kind == "effects_4x3":
+                self.effect_frames[key] = [self.trim_alpha(frame) for frame in self.slice_grid(source, 4, 3)]
             else:
                 sprites = self.slice_atlas(source)
                 if kind == "units":
@@ -1321,12 +1458,20 @@ class Assets:
                     self.zombie_sprites[key.split("_")[0]] = sprites
         except pygame.error as exc:
             self.error = f"Falha ao carregar {path.name}: {exc}"
-            placeholder = pygame.Surface((128, 128), pygame.SRCALPHA)
-            pygame.draw.circle(placeholder, RED, (64, 64), 42)
+            # Um arquivo ausente gera mensagem explícita na tela de carga. O
+            # fallback fica transparente para nunca fingir uma animação com
+            # círculo, bloco colorido ou outro símbolo provisório.
+            placeholder = pygame.Surface((1, 1), pygame.SRCALPHA)
             if kind == "image":
                 self.images[key] = pygame.transform.smoothscale(placeholder, (WIDTH, HEIGHT))
             elif kind == "sprite":
                 self.images[key] = placeholder
+            elif kind == "animation":
+                self.animation_frames[key] = [placeholder] * 8
+            elif kind == "animation_4x3":
+                self.animation_frames[key] = [placeholder] * 12
+            elif kind == "effects_4x3":
+                self.effect_frames[key] = [placeholder] * 12
             elif kind == "units":
                 self.unit_sprites[key.split("_")[0]] = [placeholder] * 12
             elif kind == "units_l2":
@@ -1336,25 +1481,24 @@ class Assets:
         self.loaded += 1
 
     @staticmethod
-    def fit_beach_background(source: pygame.Surface) -> pygame.Surface:
-        """Alinha a arte da Praia às cinco faixas reais de combate.
-
-        A ilustração contém areia/canal/areia. Este enquadramento preserva a
-        textura pintada e coloca o canal no centro da terceira faixa (em vez
-        de deixar a água ocupar as faixas superiores da tela).
-        """
+    def fit_four_lane_background(source: pygame.Surface, region: str) -> pygame.Surface:
+        """Remapeia as quatro pistas pintadas para a geometria da simulação."""
         source_width, source_height = source.get_size()
-        source_water_top = int(source_height * 0.49)
-        source_water_bottom = int(source_height * 0.62)
-        target_water_top = int(HEIGHT * 0.61)
-        target_water_bottom = int(HEIGHT * 0.72)
         canvas = pygame.Surface((WIDTH, HEIGHT)).convert()
-        bands = (
-            (0, source_water_top, 0, target_water_top),
-            (source_water_top, source_water_bottom, target_water_top, target_water_bottom),
-            (source_water_bottom, source_height, target_water_bottom, HEIGHT),
-        )
-        for source_top, source_bottom, target_top, target_bottom in bands:
+        proportions = {
+            # topo, começo da pista 1, três divisões, fim da pista 4, rodapé
+            "city": (0.0, 0.220, 0.369, 0.508, 0.732, 0.872, 1.0),
+            "desert": (0.0, 0.335, 0.445, 0.566, 0.703, 0.822, 1.0),
+            "beach": (0.0, 0.162, 0.298, 0.438, 0.583, 0.830, 1.0),
+        }[region]
+        source_breaks = tuple(int(source_height * value) for value in proportions[:-1]) + (source_height,)
+        target_breaks = (0, *LANE_BOUNDS[region], HEIGHT)
+        for source_top, source_bottom, target_top, target_bottom in zip(
+            source_breaks,
+            source_breaks[1:],
+            target_breaks,
+            target_breaks[1:],
+        ):
             source_rect = pygame.Rect(0, source_top, source_width, max(1, source_bottom - source_top))
             target_size = (WIDTH, max(1, target_bottom - target_top))
             band = source.subsurface(source_rect)
@@ -1373,6 +1517,30 @@ class Assets:
                     tile.set_colorkey((0, 0, 0))
                 tiles.append(tile)
         return tiles
+
+    @staticmethod
+    def slice_grid(source: pygame.Surface, columns: int, rows: int) -> list[pygame.Surface]:
+        """Recorta uma folha regular preservando seu canal alfa original."""
+        width, height = source.get_size()
+        frames: list[pygame.Surface] = []
+        for row in range(rows):
+            for column in range(columns):
+                rect = pygame.Rect(
+                    column * width // columns,
+                    row * height // rows,
+                    width // columns,
+                    height // rows,
+                )
+                frames.append(source.subsurface(rect).copy())
+        return frames
+
+    @staticmethod
+    def trim_alpha(source: pygame.Surface) -> pygame.Surface:
+        """Remove apenas a margem transparente de um VFX ou projétil."""
+        bounds = source.get_bounding_rect(min_alpha=8)
+        if bounds.width <= 0 or bounds.height <= 0:
+            return pygame.Surface((1, 1), pygame.SRCALPHA)
+        return source.subsurface(bounds).copy()
 
     def base_unit(self, region: str, index: int) -> pygame.Surface:
         sprites = self.unit_sprites.get(region, [])
@@ -1404,6 +1572,44 @@ class Assets:
             self.scale_cache[key] = cached
         return cached
 
+    def trimmed(self, sprite: pygame.Surface) -> pygame.Surface:
+        """Remove só a margem transparente do recorte usado no campo.
+
+        Cartas continuam usando o enquadramento integral do atlas. Em batalha,
+        o recorte justo garante que a última linha opaca da bota, roda ou casco
+        coincida de verdade com a âncora do terreno.
+        """
+        key = id(sprite)
+        cached = self.trim_cache.get(key)
+        if cached is not None:
+            return cached
+        bounds = sprite.get_bounding_rect(min_alpha=8)
+        if bounds.width <= 1 or bounds.height <= 1:
+            self.trim_cache[key] = sprite
+            return sprite
+        bounds = bounds.inflate(4, 4).clip(sprite.get_rect())
+        trimmed = sprite.subsurface(bounds).copy()
+        self.trim_cache[key] = trimmed
+        return trimmed
+
+    def actor_sources(self) -> list[pygame.Surface]:
+        """Lista exatamente os recortes que poderão virar atores OpenGL."""
+        candidates: list[pygame.Surface] = []
+        for store in (self.unit_sprites, self.unit_l2_sprites, self.zombie_sprites, self.animation_frames):
+            for sprites in store.values():
+                candidates.extend(sprites)
+        for key, _path, kind in self.jobs:
+            if kind == "sprite" and key != "beta4_toxic_impact" and key in self.images:
+                candidates.append(self.images[key])
+        unique: list[pygame.Surface] = []
+        seen: set[int] = set()
+        for sprite in candidates:
+            trimmed = self.trimmed(sprite)
+            if id(trimmed) not in seen:
+                seen.add(id(trimmed))
+                unique.append(trimmed)
+        return unique
+
 
 @dataclass
 class Defender:
@@ -1417,6 +1623,8 @@ class Defender:
     ammo: int = field(init=False)
     attack_timer: float = 0.0
     utility_timer: float = 0.0
+    reload_timer: float = 0.0
+    reload_total: float = 0.0
     stun: float = 0.0
     corrosion: float = 0.0
     ascended: float = 0.0
@@ -1424,6 +1632,7 @@ class Defender:
     turret_timer: float = 0.0
     pulse: float = 0.0
     region: str = "city"
+    motion: ActorMotion = field(default_factory=ActorMotion)
 
     def __post_init__(self) -> None:
         self.hp = float(self.stats["hp"])
@@ -1450,8 +1659,13 @@ class Defender:
     def has_ammo(self) -> bool:
         return self.max_ammo == 0 or self.ammo > 0
 
+    @property
+    def reloading(self) -> bool:
+        return self.max_ammo > 0 and self.ammo <= 0 and self.reload_timer > 0
+
     def hitbox(self) -> pygame.Rect:
-        return pygame.Rect(int(self.x - 38), int(self.y - 48), 76, 82)
+        width, height = defender_render_scale(self)
+        return pygame.Rect(int(self.x - width / 2), int(self.y - height), int(width), int(height + 12))
 
 
 @dataclass
@@ -1465,6 +1679,9 @@ class Enemy:
     x: float = field(default_factory=lambda: BOARD.right + 100)
     hp: float = field(init=False)
     attack_timer: float = 0.0
+    attack_windup: float = 0.0
+    attack_target: Defender | None = None
+    attack_damage: float = 0.0
     skill_timer: float = 1.8
     age: float = 0.0
     stun: float = 0.0
@@ -1491,6 +1708,7 @@ class Enemy:
     boss_announced: bool = False
     step_timer: float = 0.0
     dot_timer: float = 0.0
+    motion: ActorMotion = field(default_factory=ActorMotion)
 
     def __post_init__(self) -> None:
         profile = difficulty_profile(self.difficulty)
@@ -1518,8 +1736,8 @@ class Enemy:
         return tuple(self.data.get("tags", ()))
 
     def hitbox(self) -> pygame.Rect:
-        size = 96 if self.is_boss else 68
-        return pygame.Rect(int(self.x - size / 2), int(self.y - size * 0.78), size, size)
+        width, height = enemy_render_scale(self, self.region)
+        return pygame.Rect(int(self.x - width / 2), int(self.y - height), int(width), int(height + 10))
 
 
 @dataclass
@@ -1583,9 +1801,184 @@ class LaneBomb:
     """Carrinho-bomba de emergência, um por faixa de combate."""
 
     row: int
-    x: float = field(default_factory=lambda: BOARD.left - 32)
+    x: float = field(default_factory=lambda: float(LANE_BOMB_HOME_X))
     state: str = "armed"  # armed -> rolling -> spent
     kills: int = 0
+    motion: ActorMotion = field(default_factory=ActorMotion)
+
+
+def defender_render_scale(defender: Defender) -> tuple[float, float]:
+    """Tamanho visual único para a tropa ativa e sua animação de queda."""
+    role = defender.stats["role"]
+    if role == "mine":
+        base = (76, 62) if defender.stats.get("water_only") else (82, 68)
+        depth = lane_depth(defender.region, defender.row)
+        return base[0] * depth, base[1] * depth
+    if role in {"barrier", "boat", "sub"}:
+        base = (105, 82)
+    else:
+        base = (86, 98)
+    depth = lane_depth(defender.region, defender.row)
+    return base[0] * depth, base[1] * depth
+
+
+def enemy_render_scale(enemy: Enemy, region: str) -> tuple[float, float]:
+    """Mantém infectados e soldados na mesma escala física do cenário.
+
+    Os atlases terrestres têm mais respiro transparente e silhuetas mais
+    estreitas que os atlases de tropas. Por isso o tamanho nominal anterior
+    fazia um Caminhante parecer uma miniatura mesmo usando quase a mesma caixa
+    de um soldado. Água já tinha uma leitura correta e preserva sua escala.
+    """
+    water_actor = region == "beach" and enemy.row in BEACH_WATER_ROWS
+    if enemy.is_boss:
+        base = (132, 142) if water_actor else (148, 158)
+    elif enemy.key == "rastejante" and region == "city":
+        base = (126, 88)
+    elif enemy.key == "saltador":
+        base = (100, 116)
+    elif enemy.key == "nadador" and region == "beach":
+        base = (126, 72)
+    elif water_actor:
+        base = (82, 96)
+    else:
+        # Um zumbi terrestre comum fica cerca de 14% mais alto que um
+        # combatente humano, sem ultrapassar a altura da pista dianteira.
+        base = (98, 112)
+    depth = lane_depth(region, enemy.row)
+    return base[0] * depth, base[1] * depth
+
+
+def defender_animation_profile(defender: Defender) -> str:
+    """Perfil corporal usado pelo shader sem alterar a ficha da carta."""
+    return str(defender.stats.get("role", "humanoid"))
+
+
+def enemy_animation_profile(enemy: Enemy) -> str:
+    """Escolhe marcha, mordida e gesto de habilidade pela anatomia do ator."""
+    boss_profiles = {
+        "bruto_demolidor": "hammer_boss",
+        "comandante": "commander_boss",
+        "alfa": "toxic_boss",
+        "mutante": "hammer_boss",
+        "necromante": "necromancer_boss",
+        "colosso": "colossus_boss",
+        "tide": "sea_boss",
+        "hunter": "sea_boss",
+        "leviathan": "leviathan_boss",
+    }
+    if enemy.is_boss:
+        return boss_profiles.get(str(enemy.data.get("type", "")), "heavy")
+    if enemy.key == "rastejante":
+        return "crawler"
+    if "jump" in enemy.tags:
+        return "jumper"
+    if "dig" in enemy.tags:
+        return "digger"
+    if "dash" in enemy.tags:
+        return "runner"
+    if "gun" in enemy.tags or "acid" in enemy.tags:
+        return "shooter"
+    if "heal" in enemy.tags or "steal" in enemy.tags:
+        return "caster"
+    if "stomp" in enemy.tags or "parasite" in enemy.tags or "explode_death" in enemy.tags:
+        return "heavy"
+    return "walker"
+
+
+def actor_pose(
+    motion: ActorMotion,
+    *,
+    enemy: bool,
+    profile: str = "generic",
+    progress: float = 0.0,
+) -> tuple[float, float, float, float, float]:
+    """Converte um estado semântico em pose, inclinação e escala.
+
+    As quatro fases de cada ciclo são calculadas de forma determinística. Na
+    prática isso funciona como uma pequena folha de sprites, só que não perde
+    sincronia quando a máquina cai de 60 para 30 FPS.
+    """
+    direction = -1.0 if enemy else 1.0
+    cycle = math.sin(motion.state_elapsed * math.tau * 1.75)
+    pulse = math.sin(motion.state_elapsed * math.tau * 3.2)
+    state = motion.state
+    dx, dy, angle, scale_x, scale_y = 0.0, 0.0, 0.0, 1.0, 1.0
+    if state == "spawn":
+        p = clamp(motion.state_elapsed / 0.28, 0.0, 1.0)
+        scale_x = scale_y = 0.72 + p * 0.28
+        dy = (1.0 - p) * 18
+    elif state == "walk":
+        stride = 1.45 if profile == "runner" else 1.0
+        dx = cycle * 2.2 * stride
+        dy = -abs(cycle) * 3.2 * stride
+        angle = cycle * 3.4 * direction * stride
+        scale_x = 1.0 + abs(cycle) * 0.022
+    elif state in {"brace", "idle", "armed"}:
+        dy = -abs(cycle) * 1.1
+        angle = cycle * 0.75 * direction
+    elif state == "attack":
+        p = progress or clamp(motion.state_elapsed / 0.28, 0.0, 1.0)
+        thrust = math.sin(p * math.pi)
+        dx = direction * thrust * (8.5 if enemy else 3.6)
+        dy = thrust * (1.8 if enemy else -1.4)
+        angle = direction * thrust * (11.0 if enemy else -4.0)
+        scale_x = 1.0 + thrust * (0.065 if enemy else 0.025)
+    elif state in {"support", "promote"}:
+        dy = -abs(pulse) * 4.0
+        angle = pulse * 3.0
+        scale_x = scale_y = 1.0 + abs(pulse) * 0.045
+    elif state == "reload":
+        # O fallback mostra os mesmos quatro tempos do shader; a mão e o pente
+        # são completados pelo deformador de braços e arma no apresentador.
+        action = clamp(progress, 0.0, 1.0)
+        reach = math.sin(clamp(action / 0.45, 0.0, 1.0) * math.pi)
+        insert = math.sin(clamp((action - 0.38) / 0.58, 0.0, 1.0) * math.pi)
+        dx = direction * (reach - insert) * 2.5
+        dy = (reach + insert) * 1.7
+        angle = direction * (reach * 5.5 - insert * 3.0)
+        scale_y = 1.0 - reach * 0.018
+    elif state == "hit":
+        impact = math.sin(clamp(motion.state_elapsed / 0.16, 0.0, 1.0) * math.pi)
+        dx = -direction * impact * 8.0
+        dy = -impact * 2.5
+        angle = -direction * impact * 10.0
+    elif state == "stunned":
+        dx = math.sin(motion.state_elapsed * 16.0) * 2.5
+        angle = math.sin(motion.state_elapsed * 11.0) * 9.0
+    elif state == "jump":
+        angle = -direction * 10.0
+        scale_x = 1.06
+        scale_y = 0.96
+    elif state.startswith("dig"):
+        angle = direction * cycle * 2.0
+        scale_x = 1.0 + abs(cycle) * 0.03
+    elif state == "skill":
+        action = progress or clamp(motion.state_elapsed / 0.46, 0.0, 1.0)
+        power = math.sin(action * math.pi)
+        if profile in {"hammer_boss", "colossus_boss"}:
+            dy = power * 5.5
+            angle = direction * (12.0 - action * 25.0) * power
+            scale_x, scale_y = 1.0 + power * 0.07, 1.0 - power * 0.07
+        elif profile in {"sea_boss", "leviathan_boss"}:
+            dx = direction * power * 7.0
+            dy = -power * 7.0
+            angle = direction * power * 7.0
+        else:
+            dy = -power * 4.5
+            angle = direction * math.sin(action * math.tau) * 7.0
+            scale_x = scale_y = 1.0 + power * 0.06
+    elif state == "roll":
+        dx = cycle * 0.8
+        dy = -abs(cycle) * 1.7
+        angle = cycle * 1.4
+    elif state == "dead":
+        p = clamp(motion.state_elapsed / 0.48, 0.0, 1.0)
+        dx = direction * p * 10.0
+        angle = -direction * p * 28.0
+        scale_x = 1.0 + p * 0.08
+        scale_y = 1.0 - p * 0.22
+    return dx, dy, angle, scale_x, scale_y
 
 
 class Battle:
@@ -1600,6 +1993,8 @@ class Battle:
         self.projectiles: list[Projectile] = []
         self.particles: list[Particle] = []
         self.texts: list[FloatingText] = []
+        self.effects: list[VisualEffect] = []
+        self.fallen: list[DefeatAnimation] = []
         # O suficiente para experimentar a primeira formação, mas sem tornar
         # a economia da campanha irrelevante.
         self.supplies = int(self.difficulty_data["initial_supplies"])
@@ -1628,9 +2023,9 @@ class Battle:
         self.boss_alert_pending = False
         self.paused = False
         self.dead_history: list[tuple[str, int, float]] = []
-        # Cinco faixas: areia, areia, CANAL, areia, areia. Como esta versão
-        # usa cinco linhas, o canal central ocupa só a terceira linha.
-        self.water_rows = {2} if region == "beach" else set()
+        # Quatro faixas: AREIA, ÁGUA, ÁGUA, AREIA. As duas faixas centrais
+        # dividem o canal contínuo pintado na nova Praia.
+        self.water_rows = set(BEACH_WATER_ROWS) if region == "beach" else set()
         self.lane_bombs = [LaneBomb(row) for row in range(ROWS)]
         self.card_cooldowns = [0.0 for _ in selected]
 
@@ -1643,22 +2038,22 @@ class Battle:
     def cell_is_water(self, row: int, col: int) -> bool:
         if self.region != "beach":
             return False
-        # O canal da Praia é a única faixa aquática utilizável.
+        # As duas linhas centrais pertencem ao canal da Praia.
         return row in self.water_rows
 
     def ground_cell_rect(self, row: int, col: int) -> pygame.Rect:
-        x, y = cell_center(row, col, self.region)
-        return pygame.Rect(int(x - CELL_W / 2 + 7), int(y - CELL_H / 2 + 7), int(CELL_W - 14), int(CELL_H - 14))
+        return cell_rect(row, col, self.region).inflate(-14, -10)
 
     def board_cell_at(self, pos: tuple[int, int]) -> tuple[int, int] | None:
-        """Traduz um clique no terreno para a faixa mais próxima desenhada."""
+        """Traduz um clique somente quando ele está dentro da faixa pintada."""
         if not BOARD.left <= pos[0] <= BOARD.right:
             return None
         col = int(clamp((pos[0] - BOARD.left) / CELL_W, 0, COLS - 1))
-        row = min(range(ROWS), key=lambda candidate: abs(pos[1] - cell_center(candidate, col, self.region)[1]))
-        if abs(pos[1] - cell_center(row, col, self.region)[1]) > CELL_H * 0.68:
-            return None
-        return row, col
+        for row in range(ROWS):
+            top, bottom = lane_bounds(self.region, row)
+            if top <= pos[1] < bottom or (row == ROWS - 1 and pos[1] == bottom):
+                return row, col
+        return None
 
     def card(self) -> tuple[str, str]:
         return self.selected[self.selected_card]
@@ -1717,7 +2112,8 @@ class Battle:
         if cart.state != "armed":
             return False
         cart.state = "rolling"
-        cart.x = BOARD.left - 42
+        cart.x = float(LANE_BOMB_HOME_X)
+        cart.motion.loop("roll")
         self.shake = max(self.shake, 0.16)
         label, color = self.lane_bomb_info(row)
         self.announce(f"{label} — faixa {row + 1} ativada!", 1.8, color)
@@ -1744,16 +2140,16 @@ class Battle:
     def update_lane_bombs(self, dt: float) -> None:
         """Move o carrinho-bomba e limpa somente a faixa invadida uma vez."""
         for cart in self.lane_bombs:
+            cart.motion.advance(dt, "roll" if cart.state == "rolling" else "armed")
             if cart.state != "rolling":
                 continue
+            previous_x = cart.x
             cart.x += 720 * dt
             y = cell_center(cart.row, 0, self.region)[1]
-            if random.random() < dt * 18:
-                _, trail_color = self.lane_bomb_info(cart.row)
-                gravity = 0 if cart.row in self.water_rows else 18
-                self.particles.append(Particle(cart.x - 28, y + 12, random.uniform(-55, -20), random.uniform(-15, 15), 0.42, 2.6, trail_color, gravity))
             for enemy in self.enemies[:]:
-                if enemy.row == cart.row and abs(enemy.x - cart.x) < 67:
+                swept_left = min(previous_x, cart.x) - 52
+                swept_right = max(previous_x, cart.x) + 52
+                if enemy.row == cart.row and swept_left <= enemy.x <= swept_right:
                     self.take_enemy_damage(enemy, 99999, "explosion")
                     cart.kills += 1
             if cart.x > BOARD.right + 82:
@@ -1796,6 +2192,8 @@ class Battle:
         self.use_core = False
         target.ascended = 18.0
         target.ammo = target.max_ammo
+        target.reload_timer = 0.0
+        target.reload_total = 0.0
         target.stun = 0
         target.corrosion = 0
         self.announce(f"NÚCLEO DE ASCENSÃO: {target.display_name} no Nível 3!", 2.8, GOLD)
@@ -1839,17 +2237,32 @@ class Battle:
                     weighted.extend(pool[-min(5, len(pool)):])
                 key = random.choice(weighted)
             wait = (0.92 - min(0.58, wave * 0.038) + random.random() * 0.22) * float(self.difficulty_data["spawn_wait"])
-            orders.append(SpawnOrder(wait, key, random.randrange(ROWS)))
+            orders.append(SpawnOrder(wait, key, self.spawn_row_for(key)))
         if wave % 5 == 0:
             boss_key = REGIONS[self.region]["bosses"][wave // 5 - 1]
             # A escolta ainda impede que o chefe seja tratado como um alvo
             # solitário, mas não cria outra horda impossível na mesma entrada.
             escort_count = max(1, int(round((1 + wave // 5) * float(self.difficulty_data["escort_count"]))))
             for _ in range(escort_count):
-                orders.insert(random.randrange(len(orders) + 1), SpawnOrder(0.32, random.choice(pool[-min(4, len(pool)):]), random.randrange(ROWS)))
-            boss_row = random.choice(tuple(self.water_rows)) if self.region == "beach" else random.randrange(ROWS)
-            orders.append(SpawnOrder(1.15, boss_key, boss_row, True))
+                escort_key = random.choice(pool[-min(4, len(pool)):])
+                orders.insert(random.randrange(len(orders) + 1), SpawnOrder(0.32, escort_key, self.spawn_row_for(escort_key)))
+            orders.append(SpawnOrder(1.15, boss_key, self.spawn_row_for(boss_key, boss=True), True))
         return orders
+
+    def spawn_row_for(self, enemy_key: str, boss: bool = False) -> int:
+        """Escolhe uma faixa compatível com a natureza do invasor.
+
+        Na Praia, chefes da maré e inimigos aquáticos entram nas duas rotas do
+        canal central; ameaças costeiras terrestres usam as duas faixas secas.
+        Desse modo, a posição de nascimento respeita tanto a mecânica quanto
+        a perspectiva desenhada do mapa.
+        """
+        if self.region != "beach":
+            return random.randrange(ROWS)
+        if boss or enemy_key in BEACH_WATER_ENEMIES:
+            return random.choice(tuple(self.water_rows))
+        land_rows = tuple(row for row in range(ROWS) if row not in self.water_rows)
+        return random.choice(land_rows)
 
     def spawn_enemy(self, order: SpawnOrder) -> None:
         data = BOSSES.get(order.key) or ENEMIES[order.key]
@@ -1915,6 +2328,7 @@ class Battle:
         enemy.jump_timer = enemy.jump_duration
         enemy.jump_start_x = enemy.x
         enemy.jump_end_x = max(BOARD.left + 8, blocker.x - 60)
+        enemy.motion.trigger("jump", enemy.jump_duration)
         self.pulse(enemy.x, enemy.y + 16, GOLD, 9)
         self.announce(f"{enemy.data['name']}: ultrapassou uma única defesa.", 1.35, RED)
 
@@ -1929,6 +2343,7 @@ class Battle:
         # A saída fica logo depois da primeira defesa encontrada. O Escavador
         # não pode saltar uma fileira inteira nem escolher um alvo distante.
         enemy.dig_end_x = max(BOARD.left + 8, blocker.x - 60)
+        enemy.motion.trigger("dig_enter", enemy.dig_duration)
         self.pulse(enemy.x, enemy.y + 17, (194, 160, 77), 12)
         self.announce("Escavador: começou a cavar sob a primeira defesa.", 1.55, (232, 198, 112))
 
@@ -1940,6 +2355,8 @@ class Battle:
         teleporte e também impede mordidas durante a travessia.
         """
         if enemy.jump_state:
+            if enemy.motion.state != "jump":
+                enemy.motion.trigger("jump", enemy.jump_timer)
             enemy.jump_timer = max(0.0, enemy.jump_timer - dt)
             progress = clamp(1.0 - enemy.jump_timer / max(0.01, enemy.jump_duration), 0.0, 1.0)
             enemy.x = lerp(enemy.jump_start_x, enemy.jump_end_x, progress)
@@ -1954,39 +2371,33 @@ class Battle:
 
         enemy.dig_timer = max(0.0, enemy.dig_timer - dt)
         if enemy.dig_state == "enter":
+            if enemy.motion.state != "dig_enter":
+                enemy.motion.trigger("dig_enter", enemy.dig_timer)
             if enemy.dig_timer <= 0:
                 enemy.dig_state = "tunnel"
                 enemy.dig_duration = 0.58
                 enemy.dig_timer = enemy.dig_duration
+                enemy.motion.trigger("dig_tunnel", enemy.dig_duration)
             return True
 
         if enemy.dig_state == "tunnel":
+            if enemy.motion.state != "dig_tunnel":
+                enemy.motion.trigger("dig_tunnel", enemy.dig_timer)
             progress = clamp(1.0 - enemy.dig_timer / max(0.01, enemy.dig_duration), 0.0, 1.0)
             enemy.x = lerp(enemy.dig_start_x, enemy.dig_end_x, progress)
-            if enemy.step_timer <= 0:
-                self.particles.append(
-                    Particle(
-                        enemy.x + random.uniform(-14, 14),
-                        enemy.y + 18,
-                        random.uniform(-18, 18),
-                        random.uniform(-28, -9),
-                        0.34,
-                        random.uniform(2.0, 3.8),
-                        (194, 160, 77),
-                        28,
-                    )
-                )
-                enemy.step_timer = 0.08
             if enemy.dig_timer <= 0:
                 enemy.x = enemy.dig_end_x
                 enemy.dig_state = "emerge"
                 enemy.dig_duration = 0.34
                 enemy.dig_timer = enemy.dig_duration
+                enemy.motion.trigger("dig_emerge", enemy.dig_duration)
                 self.pulse(enemy.x, enemy.y + 17, (218, 185, 103), 11)
             return True
 
         # Etapa final: a silhueta cresce do chão no renderizador e só então
         # o Escavador volta a poder se mover ou atacar.
+        if enemy.motion.state != "dig_emerge":
+            enemy.motion.trigger("dig_emerge", enemy.dig_timer)
         if enemy.dig_timer <= 0:
             enemy.dig_state = ""
             enemy.burrowed = False
@@ -2002,24 +2413,29 @@ class Battle:
         if source and source.ascended > 0:
             amount *= 1.55
         enemy.hp -= amount * (1 - armor)
+        if effect not in {"status_tick", "acid"}:
+            enemy.motion.flash()
+            if not enemy.jump_state and not enemy.dig_state:
+                enemy.motion.trigger("hit", 0.12)
         if effect == "flame":
             was_burning = enemy.burn > 0
             enemy.burn = max(enemy.burn, 3.3)
             if not was_burning:
-                self.texts.append(FloatingText("QUEIMADURA", enemy.x, enemy.y - 70, (255, 157, 60), 0.85))
                 self.pulse(enemy.x, enemy.y - 20, (246, 142, 45), 6)
+            self.effects.append(VisualEffect("flame_impact", enemy.x, enemy.y - 24, (246, 142, 45), 0.26, scale=0.72))
         elif effect == "poison":
             was_poisoned = enemy.poisoned > 0
             enemy.poisoned = max(enemy.poisoned, 4.2)
             if not was_poisoned:
-                self.texts.append(FloatingText("ENVENENADO", enemy.x, enemy.y - 70, (156, 245, 91), 0.85))
                 self.pulse(enemy.x, enemy.y - 20, (132, 239, 80), 7)
+            self.effects.append(VisualEffect("toxic_impact", enemy.x, enemy.y - 24, (132, 239, 80), 0.34, scale=0.82))
         elif effect == "water":
             # Água não substitui o dano de fogo em força bruta: ela extingue
             # a queima e segura o avanço do alvo por uma janela curta.
             enemy.burn = 0.0
             soak_time = 3.6 if source and source.ascended > 0 else 2.4
             enemy.soaked = max(enemy.soaked, soak_time)
+            self.effects.append(VisualEffect("water_impact", enemy.x, enemy.y - 20, (102, 224, 244), 0.30, scale=0.78))
         if effect == "acid":
             enemy.corrosion = max(enemy.corrosion, 2.5)
         self.texts.append(FloatingText(str(int(amount)), enemy.x, enemy.y - 52, GOLD if source and source.ascended else WHITE, 0.55))
@@ -2030,12 +2446,16 @@ class Battle:
         if defender.hp <= 0:
             return
         defender.hp -= amount
+        defender.motion.flash()
+        defender.motion.trigger("hit", 0.12)
         if effect == "stun":
             defender.stun = max(defender.stun, 2.2)
         elif effect == "acid":
             defender.corrosion = max(defender.corrosion, 4.0)
         elif effect == "acid_brief":
             defender.corrosion = max(defender.corrosion, 1.8)
+        if effect in {"acid", "acid_brief"}:
+            self.effects.append(VisualEffect("toxic_impact", defender.x, defender.y - 28, (132, 239, 80), 0.28, scale=0.58))
         self.texts.append(FloatingText(str(int(amount)), defender.x, defender.y - 48, RED, 0.6))
         if defender.hp <= 0:
             self.kill_defender(defender)
@@ -2043,6 +2463,9 @@ class Battle:
     def kill_defender(self, defender: Defender) -> None:
         if defender not in self.defenders:
             return
+        sprite = self.app.defender_sprite(self, defender)
+        width, height = defender_render_scale(defender)
+        self.fallen.append(DefeatAnimation(sprite, defender.x, defender.y, width, height, self.cell_is_water(defender.row, defender.col), 0.44))
         self.defenders.remove(defender)
         self.pulse(defender.x, defender.y, RED, 25)
         if defender.stats["role"] == "barrier" and defender.stats["level"] >= 2:
@@ -2055,6 +2478,20 @@ class Battle:
     def kill_enemy(self, enemy: Enemy) -> None:
         if enemy not in self.enemies:
             return
+        sprite = self.app.enemy_sprite(self, enemy)
+        width, height = enemy_render_scale(enemy, self.region)
+        self.fallen.append(
+            DefeatAnimation(
+                sprite,
+                enemy.x,
+                enemy.y,
+                width,
+                height,
+                self.region == "beach" and enemy.row in self.water_rows,
+                0.58 if enemy.is_boss else 0.42,
+                enemy=True,
+            )
+        )
         self.enemies.remove(enemy)
         self.dead_history.append((enemy.key, enemy.row, enemy.x))
         if len(self.dead_history) > 12:
@@ -2076,41 +2513,37 @@ class Battle:
             self.supplies += 1 if self.wave < 8 else 2
 
     def pulse(self, x: float, y: float, color: tuple[int, int, int], amount: int) -> None:
-        for _ in range(amount):
-            angle = random.random() * math.tau
-            speed = random.uniform(35, 125)
-            self.particles.append(
-                Particle(x, y, math.cos(angle) * speed, math.sin(angle) * speed, random.uniform(0.35, 0.9), random.uniform(2, 5), color, 42)
-            )
+        # Mantido como gancho de compatibilidade. A versão antiga espalhava
+        # círculos; a Beta 4 reserva o desenho para sprites de VFX completos.
+        return
 
-    def explosion(self, x: float, y: float, color: tuple[int, int, int], amount: int) -> None:
-        self.pulse(x, y, color, amount)
+    def explosion(
+        self,
+        x: float,
+        y: float,
+        color: tuple[int, int, int],
+        amount: int,
+        *,
+        scale: float | None = None,
+    ) -> None:
+        if scale is None:
+            scale = clamp(0.62 + amount / 44.0, 0.72, 1.58)
+        self.effects.append(VisualEffect("explosion", x, y - 18, color, 0.46, scale=scale))
         self.shake = max(self.shake, 0.16)
 
     def fire_defender(self, defender: Defender, target: Enemy) -> None:
         role = defender.stats["role"]
         level = defender.stats["level"]
         ascending = defender.ascended > 0
-        if role in {"reload", "radio", "medic", "promoter", "barrier", "mine"}:
+        if role in {"radio", "promoter", "barrier", "mine"}:
             return
         if defender.max_ammo > 0:
             defender.ammo -= 1
         defender.attack_timer = float(defender.stats["cooldown"]) * (0.68 if ascending else 1.0)
-        # Pequeno clarão e fumaça deixam a cadência das armas legível sem
-        # substituir as artes dos soldados por uma animação pesada.
-        muzzle_color = (104, 221, 239) if role == "waterjet" else ((129, 238, 82) if role == "poison" else GOLD)
-        for _ in range(4 if role in {"shotgun", "grenade", "mortar"} else 2):
-            self.particles.append(
-                Particle(
-                    defender.x + 24,
-                    defender.y - 28,
-                    random.uniform(24, 70),
-                    random.uniform(-18, 18),
-                    0.16,
-                    random.uniform(1.5, 3.2),
-                    muzzle_color,
-                )
-            )
+        defender.motion.trigger(
+            "attack",
+            0.48 if role == "mortar" else (0.36 if role == "grenade" else 0.24),
+        )
         if role == "sniper" and level == 1 and not ascending and random.random() < 0.28:
             self.texts.append(FloatingText("ERROU", target.x, target.y - 42, GRAY, 0.7))
             self.projectiles.append(Projectile(defender.x + 15, defender.y - 22, None, target.x, target.y - 18, 0, "tracer", defender, travel=0.22))
@@ -2143,7 +2576,21 @@ class Battle:
                     clone = self.closest_enemy_at(target.row + offset, target.x)
                     if clone:
                         self.projectiles.append(
-                            Projectile(defender.x, defender.y - 24, clone, clone.x, clone.y - 15, damage * 0.72, kind, defender, radius, True, 0.45, effect=effect)
+                            Projectile(
+                                defender.x,
+                                defender.y - 24,
+                                clone,
+                                clone.x,
+                                clone.y - 15,
+                                damage * 0.72,
+                                kind,
+                                defender,
+                                radius,
+                                True,
+                                0.45,
+                                elapsed=-0.30,
+                                effect=effect,
+                            )
                         )
             if ascending and role == "grenade":
                 kind, radius, damage = "bazooka", BOARD.width, damage * 1.45
@@ -2164,9 +2611,26 @@ class Battle:
             kind = "boat"
         elif role == "sub":
             kind, radius = "torpedo", CELL_W * 0.42
-        self.projectiles.append(
-            Projectile(defender.x + 16, defender.y - 22, target, target.x, target.y - 16, damage, kind, defender, radius, True, 0.24 if kind in {"rifle", "flame", "poison", "waterjet"} else 0.42, effect=effect)
+        travel = 0.38 if kind in {"flame", "poison", "waterjet"} else (0.24 if kind == "rifle" else 0.42)
+        projectile = Projectile(
+            defender.x + 16,
+            defender.y - 22,
+            target,
+            target.x,
+            target.y - 16,
+            damage,
+            kind,
+            defender,
+            radius,
+            True,
+            travel,
+            effect=effect,
         )
+        if kind == "mortar":
+            projectile.elapsed = -0.34
+        elif kind in {"grenade", "bazooka"}:
+            projectile.elapsed = -0.12
+        self.projectiles.append(projectile)
 
     def closest_enemy_at(self, row: int, x: float) -> Enemy | None:
         candidates = [enemy for enemy in self.enemies if enemy.row == row and enemy.hp > 0]
@@ -2207,12 +2671,16 @@ class Battle:
         target.sprite_index = regional_sprite_index(self.region, target_key)
         target.hp = max(1.0, float(upgraded["hp"]) * max(0.55, old_hp_ratio))
         target.ammo = int(round(int(upgraded["ammo"]) * old_ammo_ratio)) if int(upgraded["ammo"]) else 0
+        target.reload_timer = 0.0
+        target.reload_total = 0.0
         target.attack_timer = 0.0
         target.utility_timer = 0.0
         target.stun = 0.0
         target.corrosion = 0.0
         target.display_name = self.display_name_for(target_key)
         instructor.utility_timer = float(instructor.stats["cooldown"])
+        instructor.motion.trigger("support", 0.46)
+        target.motion.trigger("promote", 0.60)
         self.announce(f"PROMOÇÃO CONCLUÍDA: {target.display_name} agora é N2!", 2.5, GOLD)
         self.pulse(target.x, target.y - 12, GOLD, 28)
         return True
@@ -2226,75 +2694,46 @@ class Battle:
 
     def utility_defender(self, defender: Defender, dt: float) -> None:
         role = defender.stats["role"]
-        if role == "reload":
-            if defender.utility_timer <= 0:
-                radius = float(defender.stats["range"]) * CELL_W
-                reloaded = 0
-                for ally in self.defenders:
-                    if ally is defender or ally.row != defender.row:
-                        continue
-                    if abs(ally.x - defender.x) <= radius + 1 and ally.max_ammo > 0:
-                        amount = 4 if defender.stats["level"] == 1 else 7
-                        if ally.ascended > 0:
-                            amount += 2
-                        previous = ally.ammo
-                        ally.ammo = min(ally.max_ammo, ally.ammo + amount)
-                        reloaded += ally.ammo - previous
-                defender.utility_timer = float(defender.stats["cooldown"]) * (0.34 if defender.ascended else 1.0)
-                if reloaded:
-                    self.pulse(defender.x, defender.y - 18, TEAL, 7)
-                    self.texts.append(FloatingText(f"+{reloaded} munição", defender.x, defender.y - 56, TEAL, 0.8))
-            if defender.stats["level"] >= 2:
-                defender.drone_timer -= dt
-                target = self.target_in_range(defender)
-                if defender.drone_timer <= 0 and target:
-                    defender.drone_timer = 1.1 if not defender.ascended else 0.7
-                    self.projectiles.append(Projectile(defender.x + 18, defender.y - 55, target, target.x, target.y - 24, 17 if not defender.ascended else 32, "drone", defender, 0, True, 0.25))
-                if defender.ascended:
-                    defender.turret_timer -= dt
-                    turret_targets = [
-                        enemy
-                        for enemy in self.enemies
-                        if enemy.row == defender.row
-                        and enemy.x >= defender.x - CELL_W * 0.55
-                        and enemy.x - defender.x <= CELL_W * 4.2
-                    ]
-                    if defender.turret_timer <= 0 and turret_targets:
-                        target = min(turret_targets, key=lambda enemy: enemy.x)
-                        turret_x = min(BOARD.right - 18, defender.x + CELL_W * 0.7)
-                        self.projectiles.append(
-                            Projectile(turret_x, defender.y - 31, target, target.x, target.y - 20, 31, "turret", defender, 0, True, 0.16)
-                        )
-                        defender.turret_timer = 0.31
-        elif role == "radio" and defender.utility_timer <= 0:
+        if role == "radio" and defender.utility_timer <= 0:
             gain = 14 if defender.stats["level"] == 1 else 28
             if defender.ascended:
                 gain = 52
             self.supplies += gain
             defender.utility_timer = float(defender.stats["cooldown"]) * (0.48 if defender.ascended else 1.0)
+            defender.motion.trigger("support", 0.48)
             self.texts.append(FloatingText(f"+{gain} SUP", defender.x, defender.y - 55, GOLD, 1.0))
             self.pulse(defender.x, defender.y - 18, GOLD, 8)
-        elif role == "medic" and defender.utility_timer <= 0:
-            radius = float(defender.stats["range"]) * CELL_W
-            healed = False
-            for ally in self.defenders:
-                if abs(ally.x - defender.x) <= radius and abs(ally.row - defender.row) <= 1:
-                    if defender.stats["level"] >= 2 and ally.hp < ally.max_hp:
-                        ally.hp = min(ally.max_hp, ally.hp + 26 + (16 if defender.ascended else 0))
-                        healed = True
-                    if defender.stats["level"] == 1 or defender.ascended:
-                        if ally.stun > 0 or ally.corrosion > 0:
-                            ally.stun = 0
-                            ally.corrosion = 0
-                            healed = True
-            defender.utility_timer = float(defender.stats["cooldown"]) * (0.65 if defender.ascended else 1.0)
-            if healed:
-                self.pulse(defender.x, defender.y - 16, (104, 225, 164), 9)
         elif role == "promoter" and defender.utility_timer <= 0:
             self.promote_defender(defender)
 
+    def update_self_reload(self, defender: Defender, dt: float) -> bool:
+        """Executa a recarga da própria arma e bloqueia o tiro nesse estado."""
+        if defender.max_ammo <= 0 or defender.ammo > 0:
+            defender.reload_timer = 0.0
+            defender.reload_total = 0.0
+            return False
+        # A última rajada continua visualmente completa antes de a arma baixar.
+        if defender.reload_timer <= 0 and defender.motion.state == "attack" and defender.motion.event_left > 0:
+            return True
+        if defender.reload_timer <= 0:
+            defender.reload_total = weapon_reload_seconds(defender.stats, defender.ascended > 0)
+            defender.reload_timer = defender.reload_total
+            defender.motion.trigger("reload", defender.reload_total)
+        defender.reload_timer = max(0.0, defender.reload_timer - dt)
+        if defender.reload_timer <= 0:
+            defender.ammo = defender.max_ammo
+            defender.attack_timer = max(defender.attack_timer, 0.16)
+            defender.motion.loop("idle")
+            defender.reload_total = 0.0
+            return True
+        if defender.motion.state != "reload":
+            defender.motion.trigger("reload", defender.reload_timer)
+        return True
+
     def update_defenders(self, dt: float) -> None:
         for defender in self.defenders[:]:
+            role = defender.stats["role"]
+            defender.motion.advance(dt, "armed" if role == "mine" else "idle")
             defender.attack_timer -= dt
             defender.utility_timer -= dt
             defender.stun = max(0.0, defender.stun - dt)
@@ -2303,7 +2742,7 @@ class Battle:
             defender.pulse += dt
             if defender.corrosion > 0 and random.random() < dt * 1.6:
                 self.damage_defender(defender, 1.6)
-            if defender.stats["role"] == "mine":
+            if role == "mine":
                 target = next((enemy for enemy in self.enemies if enemy.row == defender.row and abs(enemy.x - defender.x) < 49), None)
                 if target:
                     is_safe = defender.stats["level"] >= 2
@@ -2318,15 +2757,18 @@ class Battle:
                             for enemy in self.enemies[:]:
                                 if enemy.row == defender.row and abs(enemy.x - defender.x) < radius:
                                     self.take_enemy_damage(enemy, defender.stats["damage"], "explosion", defender)
+                        self.effects.append(VisualEffect("explosion", defender.x, defender.y - 13, GOLD, 0.32, scale=0.95))
                         self.explosion(defender.x, defender.y, GOLD, 18)
                     else:
                         self.announce("A mina falhou!", 1.2, RED)
                     self.defenders.remove(defender)
                 continue
             if defender.stun > 0:
+                defender.motion.trigger("stunned", defender.stun)
+                continue
+            if self.update_self_reload(defender, dt):
                 continue
             self.utility_defender(defender, dt)
-            role = defender.stats["role"]
             minimum = CELL_W * 1.05 if role == "mortar" else 0
             target = self.target_in_range(defender, minimum)
             if target and defender.attack_timer <= 0 and defender.has_ammo():
@@ -2348,7 +2790,21 @@ class Battle:
         que vem depois é menor, localizada e possui um intervalo legível.
         """
         boss_type = enemy.data.get("type", "")
+        enemy.motion.trigger("skill", 0.72)
         self.shake = max(self.shake, 0.42)
+        entrance_visuals = {
+            "bruto_demolidor": ("ground_slam", (230, 91, 61)),
+            "comandante": ("command_aura", (232, 77, 62)),
+            "alfa": ("toxic_wave", (132, 239, 80)),
+            "mutante": ("ground_slam", (225, 152, 70)),
+            "necromante": ("arcane_cast", (197, 128, 238)),
+            "colosso": ("ground_slam", (227, 163, 81)),
+            "tide": ("tidal_surge", (95, 195, 239)),
+            "hunter": ("tidal_surge", (95, 195, 239)),
+            "leviathan": ("tidal_surge", (95, 195, 239)),
+        }
+        visual_kind, visual_color = entrance_visuals.get(str(boss_type), ("ground_slam", RED))
+        self.effects.append(VisualEffect(visual_kind, enemy.x, enemy.y, visual_color, 0.92, scale=1.45))
         if boss_type == "bruto_demolidor":
             for defender in self.defenders:
                 if self.is_military_defender(defender):
@@ -2420,7 +2876,21 @@ class Battle:
             "leviathan": 18.0,
         }
         enemy.skill_timer = cooldowns.get(boss_type, 12.0) * float(self.difficulty_data["skill_cooldown"])
+        enemy.motion.trigger("skill", 0.46)
         self.shake = max(self.shake, 0.24)
+        skill_visuals = {
+            "bruto_demolidor": ("ground_slam", (230, 91, 61)),
+            "comandante": ("command_aura", (232, 77, 62)),
+            "alfa": ("toxic_wave", (132, 239, 80)),
+            "mutante": ("ground_slam", (225, 152, 70)),
+            "necromante": ("arcane_cast", (197, 128, 238)),
+            "colosso": ("ground_slam", (227, 163, 81)),
+            "tide": ("tidal_surge", (95, 195, 239)),
+            "hunter": ("tidal_surge", (95, 195, 239)),
+            "leviathan": ("tidal_surge", (95, 195, 239)),
+        }
+        visual_kind, visual_color = skill_visuals.get(str(boss_type), ("ground_slam", RED))
+        self.effects.append(VisualEffect(visual_kind, enemy.x, enemy.y, visual_color, 0.68, scale=1.0))
 
         if boss_type == "bruto_demolidor":
             # Regra central do primeiro chefe: sem stun global repetido. O
@@ -2493,6 +2963,7 @@ class Battle:
             self.announce("LEVIATÃ: jato de pressão concentrado na faixa de água.", 2.0, (95, 195, 239))
 
     def enemy_special(self, enemy: Enemy) -> None:
+        enemy.motion.trigger("skill", 0.34 if not enemy.is_boss else 0.46)
         if enemy.is_boss:
             self.boss_skill(enemy)
             return
@@ -2512,6 +2983,7 @@ class Battle:
                 damage = self.scaled_enemy_damage(enemy, 16 + self.wave)
                 self.projectiles.append(Projectile(enemy.x - 12, enemy.y - 22, victim, victim.x, victim.y - 18, damage, "acid", enemy, CELL_W * 0.34, False, 0.48, effect="acid"))
         if "scream" in enemy.tags:
+            self.effects.append(VisualEffect("command_aura", enemy.x, enemy.y, RED, 0.58, scale=0.72))
             for other in self.enemies:
                 if other.row == enemy.row and abs(other.x - enemy.x) < CELL_W * 2.6:
                     other.rage = max(other.rage, 3.5)
@@ -2519,6 +2991,7 @@ class Battle:
                 self.enemies.append(Enemy("caminhante" if self.region != "beach" else "boia", enemy.row, ENEMIES["caminhante" if self.region != "beach" else "boia"], self.region, self.wave, difficulty=self.difficulty, x=BOARD.right + 20))
             self.announce("Grito: a horda ganhou velocidade.", 1.2, RED)
         if "heal" in enemy.tags:
+            self.effects.append(VisualEffect("arcane_cast", enemy.x, enemy.y, (154, 239, 134), 0.64, scale=0.76))
             nearby = [other for other in self.enemies if other is not enemy and abs(other.x - enemy.x) < CELL_W * 1.8]
             for other in nearby:
                 other.hp = min(other.max_hp, other.hp + 42)
@@ -2530,15 +3003,18 @@ class Battle:
                     self.enemies.append(revived)
                     enemy.revived = True
         if "parasite" in enemy.tags:
+            self.effects.append(VisualEffect("ground_slam", enemy.x, enemy.y, (218, 106, 76), 0.54, scale=0.70))
             for defender in self.defenders:
                 if defender.row == enemy.row and defender.x < enemy.x and enemy.x - defender.x < CELL_W * 2.1:
                     defender.stun = max(defender.stun, 2.6)
             self.announce("Parasita: tiro das tropas foi desabilitado.", 1.4, RED)
         if "stomp" in enemy.tags:
+            self.effects.append(VisualEffect("ground_slam", enemy.x, enemy.y, (223, 132, 73), 0.60, scale=0.84))
             for defender in self.defenders:
                 if defender.row == enemy.row and abs(defender.x - enemy.x) < CELL_W * 1.8:
                     self.damage_defender(defender, self.scaled_enemy_damage(enemy, 24), "stun")
         if "steal" in enemy.tags:
+            self.effects.append(VisualEffect("arcane_cast", enemy.x, enemy.y, GOLD, 0.58, scale=0.68))
             stolen = min(18, self.supplies)
             self.supplies -= stolen
             enemy.stolen += stolen
@@ -2547,6 +3023,7 @@ class Battle:
     def update_enemies(self, dt: float) -> None:
         for enemy in self.enemies[:]:
             enemy.age += dt
+            enemy.motion.advance(dt, "walk")
             enemy.attack_timer -= dt
             enemy.skill_timer -= dt
             enemy.stun = max(0.0, enemy.stun - dt)
@@ -2557,6 +3034,16 @@ class Battle:
             enemy.rage = max(0.0, enemy.rage - dt)
             enemy.step_timer -= dt
             enemy.dot_timer -= dt
+            if enemy.attack_windup > 0:
+                enemy.attack_windup = max(0.0, enemy.attack_windup - dt)
+                if enemy.attack_windup <= 0:
+                    victim = enemy.attack_target
+                    enemy.attack_target = None
+                    if victim in self.defenders and victim.hp > 0 and abs(victim.row - enemy.row) == 0:
+                        # O dano coincide com o contato da mordida/martelo, não
+                        # com o primeiro quadro da preparação do ataque.
+                        self.damage_defender(victim, enemy.attack_damage)
+                    enemy.attack_damage = 0.0
             # Queimadura e Envenenado causam pulsos legíveis de dano. O dano
             # periódico não renova o próprio estado, portanto ambos acabam no
             # tempo previsto em vez de permanecerem ativos para sempre.
@@ -2577,6 +3064,7 @@ class Battle:
             if self.update_enemy_motion(enemy, dt):
                 continue
             if enemy.stun > 0:
+                enemy.motion.trigger("stunned", enemy.stun)
                 continue
             speed = float(enemy.data["speed"]) * (1.55 if enemy.rage > 0 else 1.0)
             if "dash" in enemy.tags and enemy.age < 1.7:
@@ -2593,30 +3081,19 @@ class Battle:
                 if "jump" in enemy.tags and not enemy.jump_used:
                     self.begin_jump(enemy, blocker)
                     continue
-                if enemy.attack_timer <= 0:
+                if enemy.attack_timer <= 0 and enemy.attack_windup <= 0:
                     scale = boss_damage_scale(self.wave) if enemy.is_boss else enemy_damage_scale(self.wave)
                     damage = self.scaled_enemy_damage(enemy, float(enemy.data["damage"]) * scale)
-                    self.damage_defender(blocker, damage)
+                    attack_duration = 0.44 if enemy.is_boss else 0.34
+                    enemy.attack_target = blocker
+                    enemy.attack_damage = damage
+                    enemy.attack_windup = attack_duration * 0.56
+                    enemy.motion.trigger("attack", attack_duration)
                     enemy.attack_timer = float(enemy.data["attack"])
+                elif enemy.motion.event_left <= 0:
+                    enemy.motion.trigger("brace", min(0.28, max(0.08, enemy.attack_timer)))
                 continue
             enemy.x -= speed * dt
-            if enemy.step_timer <= 0:
-                water_step = self.region == "beach" and enemy.row in self.water_rows
-                step_color = (112, 221, 235) if water_step else ((208, 177, 105) if self.region == "desert" else (124, 136, 138))
-                for _ in range(2 if water_step else 1):
-                    self.particles.append(
-                        Particle(
-                            enemy.x + random.uniform(-14, 12),
-                            enemy.y + 18,
-                            random.uniform(-16, 16),
-                            random.uniform(-18, -4),
-                            0.30,
-                            random.uniform(1.8, 3.3),
-                            step_color,
-                            22 if not water_step else 0,
-                        )
-                    )
-                enemy.step_timer = 0.18 if "dash" in enemy.tags and enemy.age < 1.7 else 0.34
             if enemy.x <= BOARD.left + 8:
                 cart = self.lane_bombs[enemy.row]
                 if cart.state == "armed":
@@ -2634,13 +3111,9 @@ class Battle:
     def update_projectiles(self, dt: float) -> None:
         for projectile in self.projectiles[:]:
             projectile.elapsed += dt
+            if projectile.elapsed < 0:
+                continue
             t = clamp(projectile.elapsed / projectile.travel, 0, 1)
-            current_x = lerp(projectile.x, projectile.target_x, t)
-            current_y = lerp(projectile.y, projectile.target_y, t) - (math.sin(t * math.pi) * 46 if projectile.kind in {"grenade", "mortar", "bazooka"} else 0)
-            if random.random() < dt * 50:
-                trail_colors = {"flame": (246, 142, 45), "poison": (128, 236, 78), "waterjet": (102, 224, 244)}
-                color = trail_colors.get(projectile.kind, GOLD) if projectile.friendly else (119, 224, 96)
-                self.particles.append(Particle(current_x, current_y, random.uniform(-20, 20), random.uniform(-20, 20), 0.25, 2.2, color))
             if t < 1:
                 continue
             self.projectiles.remove(projectile)
@@ -2655,7 +3128,8 @@ class Battle:
                             if abs(other.y - target.y) < CELL_H * 0.75 and abs(other.x - target.x) < projectile.radius:
                                 self.take_enemy_damage(other, projectile.damage * 0.72, projectile.effect, projectile.owner if isinstance(projectile.owner, Defender) else None)
                     if projectile.kind in {"grenade", "mortar", "bazooka", "torpedo"}:
-                        self.explosion(projectile.target_x, projectile.target_y, GOLD, 16)
+                        scale = 1.35 if projectile.kind == "bazooka" else (1.12 if projectile.kind == "mortar" else 0.96)
+                        self.explosion(projectile.target_x, projectile.target_y, GOLD, 16, scale=scale)
             else:
                 target = projectile.target
                 if isinstance(target, Defender) and target in self.defenders:
@@ -2666,7 +3140,14 @@ class Battle:
                                 continue
                             if abs(other.y - target.y) < CELL_H * 0.75 and abs(other.x - target.x) < projectile.radius:
                                 self.damage_defender(other, projectile.damage * 0.5, projectile.effect)
-                    self.explosion(projectile.target_x, projectile.target_y, (106, 219, 91), 10)
+                    if projectile.kind == "acid":
+                        self.effects.append(VisualEffect("toxic_impact", projectile.target_x, projectile.target_y, (132, 239, 80), 0.30, scale=0.78))
+                    elif projectile.kind == "torpedo":
+                        self.effects.append(VisualEffect("water_impact", projectile.target_x, projectile.target_y, (102, 224, 244), 0.32, scale=0.92))
+                    else:
+                        # Tiros inimigos recebem um impacto curto de munição;
+                        # não fabricam uma explosão de granada a cada acerto.
+                        self.effects.append(VisualEffect("ballistic_impact", projectile.target_x, projectile.target_y, (241, 198, 122), 0.18, scale=0.30))
 
     def update_particles(self, dt: float) -> None:
         for particle in self.particles[:]:
@@ -2681,6 +3162,14 @@ class Battle:
             text.y -= 20 * dt
             if text.ttl <= 0:
                 self.texts.remove(text)
+        for effect in self.effects[:]:
+            effect.elapsed += dt
+            if effect.elapsed >= effect.duration:
+                self.effects.remove(effect)
+        for fallen in self.fallen[:]:
+            fallen.elapsed += dt
+            if fallen.elapsed >= fallen.duration:
+                self.fallen.remove(fallen)
 
     def update_wave(self, dt: float) -> None:
         if self.finished:
@@ -2824,10 +3313,19 @@ class Game:
     def __init__(self) -> None:
         pygame.init()
         pygame.display.set_caption(f"Soldados vs Zumbis — {VERSION}")
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.presenter: OpenGLPresenter | None = None
+        self.renderer_error = ""
+        self.renderer_label = "Pygame · compatibilidade"
+        self.actor_commands: list[ActorCommand] = []
+        self.overlay_surface: pygame.Surface | None = None
+        self.world_surface = self._create_display()
+        self.screen = self.world_surface
         self.clock = pygame.time.Clock()
         self.fonts = FontBook()
         self.assets = Assets()
+        self.gpu_preload_queue: list[pygame.Surface] = []
+        self.gpu_preloaded = 0
+        self.gpu_queue_ready = False
         self.running = True
         self.scene = "loading"
         self.scene_elapsed = 0.0
@@ -2840,20 +3338,77 @@ class Game:
         self.dossier_page = 0
         self.hover_card: tuple[str, str] | None = None
 
-    def run(self) -> None:
-        while self.running:
-            dt = min(0.05, self.clock.tick(FPS) / 1000.0)
-            self.scene_elapsed += dt
-            self.handle_events()
-            self.update(dt)
-            self.draw()
+    def _create_display(self) -> pygame.Surface:
+        """Abre OpenGL quando há GPU e preserva um fallback Pygame completo."""
+        requested = os.environ.get("SVZ_RENDERER", "opengl").strip().lower()
+        dummy_driver = os.environ.get("SDL_VIDEODRIVER", "").strip().lower() == "dummy"
+        if requested not in {"software", "pygame"} and not dummy_driver:
+            try:
+                pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 2)
+                pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 1)
+                pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
+                pygame.display.set_mode((WIDTH, HEIGHT), pygame.OPENGL | pygame.DOUBLEBUF)
+                presenter = OpenGLPresenter(WIDTH, HEIGHT)
+                self.presenter = presenter
+                self.renderer_label = presenter.info.label
+                self.overlay_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA, 32)
+                return pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA, 32)
+            except Exception as exc:  # driver ausente ou OpenGL muito antigo
+                self.renderer_error = f"{type(exc).__name__}: {exc}"
+                if self.presenter is not None:
+                    self.presenter.close()
+                    self.presenter = None
+                pygame.display.quit()
+                pygame.display.init()
+                pygame.display.set_caption(f"Soldados vs Zumbis — {VERSION}")
+        display = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.overlay_surface = None
+        return display
+
+    def present_frame(self) -> None:
+        """Entrega o quadro ao compositor escolhido sem duplicar a lógica."""
+        if self.presenter is None:
             pygame.display.flip()
-        pygame.quit()
+            return
+        tint = REGIONS.get(self.battle.region if self.battle else self.region, REGIONS["city"])["accent"]
+        self.presenter.present(
+            self.world_surface,
+            actors=self.actor_commands,
+            overlay=self.overlay_surface,
+            elapsed=self.scene_elapsed,
+            tint=tint,
+            strength=1.0 if self.scene == "battle" else 0.42,
+        )
+
+    def run(self) -> None:
+        try:
+            while self.running:
+                dt = min(0.05, self.clock.tick(FPS) / 1000.0)
+                self.scene_elapsed += dt
+                self.handle_events()
+                self.update(dt)
+                self.draw()
+                self.present_frame()
+        finally:
+            if self.presenter is not None:
+                self.presenter.close()
+            pygame.quit()
 
     def update(self, dt: float) -> None:
         if self.scene == "loading":
-            self.assets.load_next()
+            if not self.assets.complete:
+                self.assets.load_next()
             if self.assets.complete:
+                if self.presenter is not None:
+                    if not self.gpu_queue_ready:
+                        self.gpu_preload_queue = self.assets.actor_sources()
+                        self.gpu_queue_ready = True
+                    batch_end = min(len(self.gpu_preload_queue), self.gpu_preloaded + 8)
+                    if batch_end > self.gpu_preloaded:
+                        self.presenter.preload_sprites(self.gpu_preload_queue[self.gpu_preloaded:batch_end])
+                        self.gpu_preloaded = batch_end
+                    if self.gpu_preloaded < len(self.gpu_preload_queue):
+                        return
                 self.scene = "title"
                 self.scene_elapsed = 0
         elif self.scene == "battle" and self.battle:
@@ -3180,7 +3735,13 @@ class Game:
             self.screen.blit(veil, (0, 0))
         else:
             self.screen.fill((8, 13, 18))
-        progress = self.assets.loaded / max(1, self.assets.total)
+        asset_progress = self.assets.loaded / max(1, self.assets.total)
+        if self.presenter is not None:
+            gpu_total = len(self.gpu_preload_queue)
+            gpu_progress = (self.gpu_preloaded / gpu_total) if gpu_total else (1.0 if self.assets.complete else 0.0)
+            progress = asset_progress * 0.74 + gpu_progress * 0.26
+        else:
+            progress = asset_progress
         # A arte entregue pelo usuário já contém o título. O painel discreto
         # abaixo não a redesenha nem esconde o logotipo central.
         panel = pygame.Rect(WIDTH // 2 - 282, HEIGHT - 150, 564, 108)
@@ -3189,7 +3750,11 @@ class Game:
         bar = pygame.Rect(panel.x + 42, panel.y + 51, panel.width - 84, 18)
         pygame.draw.rect(self.screen, (31, 42, 47), bar, border_radius=9)
         pygame.draw.rect(self.screen, TEAL, (bar.x, bar.y, int(bar.width * progress), bar.height), border_radius=9)
-        self.draw_text(f"Preparando artes e animações  {self.assets.loaded}/{self.assets.total}", self.fonts.small, WHITE, (panel.centerx, panel.y + 79), "center")
+        if self.presenter is not None and self.assets.complete:
+            status = f"Enviando atores para a GPU  {self.gpu_preloaded}/{len(self.gpu_preload_queue)}"
+        else:
+            status = f"Preparando artes e animações  {self.assets.loaded}/{self.assets.total}"
+        self.draw_text(status, self.fonts.small, WHITE, (panel.centerx, panel.y + 79), "center")
         if self.assets.error:
             self.draw_text(self.assets.error, self.fonts.small, RED, (panel.centerx, panel.y - 18), "center")
 
@@ -3305,7 +3870,7 @@ class Game:
             metric_a, metric_b = self.card_metrics(data)
             self.draw_text(f"{data['cost']} SUP", self.fonts.small, GOLD, (rect.x + 66, rect.y + 14))
             self.draw_text(metric_a, self.fonts.tiny, WHITE, (rect.x + 66, rect.y + 38))
-            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "reload", "medic", "promoter"} else (208, 218, 213), (rect.x + 66, rect.y + 55))
+            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "promoter"} else (208, 218, 213), (rect.x + 66, rect.y + 55))
             special_n2 = (self.difficulty == "medium" and key in {"submarino", "bomba_agua"}) or (self.difficulty == "hard" and key == "instrutor")
             level = f"N{data['level']}" + (" • ESPECIAL" if special_n2 else "") + (" • ÁGUA" if data.get("water_only") else "")
             self.draw_text(level, self.fonts.tiny, TEAL if data.get("water_only") else region["accent"], (rect.x + 12, rect.y + 93))
@@ -3333,8 +3898,8 @@ class Game:
         lines = [
             ("1. Escolha 8 cartas", "Antes da missão, monte uma equipe. Cada região tem uniformes, armas e funções próprias."),
             ("2. Posicione por alcance", "As tropas só atacam quando um zumbi entra no alcance de seus blocos. Escopetas seguram perto; snipers cobrem a linha."),
-            ("3. Munição é limitada", "Armas não recarregam sozinhas. Mecânicos e Engenheiros reabastecem tropas próximas; proteja-os."),
-            ("4. Suprimentos e saúde", "Rádio gera créditos. Médicos limpam debuffs ou curam vida, conforme o nível da carta."),
+            ("3. Munição e recarga", "Ao esvaziar a arma, a tropa baixa o armamento e recarrega sozinha por 8 a 15 s. Ela não atira durante a animação."),
+            ("4. Suprimentos", "Rádio gera créditos. Cada arma recarrega sozinha no seu próprio tempo, sem carta externa de munição."),
             ("5. Chefes e N3", "Nas ondas 5, 10 e 15 há chefes. Ao derrubá-los, use N3 em uma defesa para ativar o Nível 3 temporário."),
             ("6. Comandos e água", "A aba superior reúne MENU, PAUSA, REMOVER, N3 e PRÓXIMA. Cartas marítimas aparecem somente na Praia e entram apenas no canal."),
         ]
@@ -3411,7 +3976,18 @@ class Game:
             # batalha. Antes esta tela ainda puxava o quadro antigo do atlas
             # urbano para o Saltador, que incluía uma pilastra de cenário.
             # O retrato exclusivo da Beta 3 não traz obstáculo algum.
-            if not is_units and item["key"] == "saltador" and "zombie_jumper_beta3" in self.assets.images:
+            dossier_sheet = {
+                ("city", "caminhante"): "city_walker_walk",
+                ("desert", "digger"): "desert_digger_states",
+                ("beach", "nadador"): "beach_swimmer_walk",
+            }.get((sprite_region, item["key"])) if not is_units else None
+            if not is_units and item["key"] in BOSSES:
+                boss_frames = self.assets.animation_frames.get(f"{sprite_region}_boss_actions", [])
+                boss_row = REGIONS[sprite_region]["bosses"].index(item["key"])
+                sprite = boss_frames[boss_row * 4] if len(boss_frames) >= 12 else self.assets.zombie(sprite_region, int(icon_index))
+            elif dossier_sheet and self.assets.animation_frames.get(dossier_sheet):
+                sprite = self.assets.animation_frames[dossier_sheet][0]
+            elif not is_units and item["key"] == "saltador" and "zombie_jumper_beta3" in self.assets.images:
                 sprite = self.assets.images["zombie_jumper_beta3"]
             elif not is_units and item["key"] == "rastejante" and "zombie_crawler_beta3" in self.assets.images:
                 sprite = self.assets.images["zombie_crawler_beta3"]
@@ -3435,19 +4011,13 @@ class Game:
         shake_x = int(math.sin(self.scene_elapsed * 55) * 4 * battle.shake)
         shake_y = int(math.cos(self.scene_elapsed * 37) * 3 * battle.shake)
         self.screen.blit(background, (shake_x, shake_y))
-        # A área usa faixas de terreno reais. Não há quadrados coloridos: só
-        # limites horizontais discretos onde os pés realmente caminham.
+        # As quatro pistas já estão pintadas no próprio cenário. Nenhuma faixa
+        # sintética é sobreposta à arte: pés, água, asfalto e areia coincidem.
         ambient = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        if battle.region == "beach":
-            for row in battle.water_rows:
-                water_rect = pygame.Rect(BOARD.left, int(BOARD.top + row * CELL_H), BOARD.width, int(CELL_H))
-                pygame.draw.rect(ambient, (56, 163, 232, 22), water_rect, border_radius=14)
         if battle.global_toxic > 0:
             ambient.fill((92, 202, 86, int(30 + battle.global_toxic * 8)))
         self.screen.blit(ambient, (0, 0))
-        self.draw_lane_guides(battle)
         self.draw_lane_bombs(battle)
-        self.draw_battle_top()
         mouse = pygame.mouse.get_pos()
         hovered_cell = battle.board_cell_at(mouse)
         if hovered_cell and not battle.finished:
@@ -3461,28 +4031,20 @@ class Game:
             self.draw_defender(defender)
         for enemy in battle.enemies:
             self.draw_enemy(enemy)
+        self.draw_fallen(battle)
+        if self.overlay_surface is not None:
+            self.screen = self.overlay_surface
         self.draw_projectiles(battle)
+        self.draw_visual_effects(battle)
         self.draw_particles(battle)
+        self.draw_battle_top()
         self.draw_battle_status()
         if battle.finished:
             self.draw_result_overlay()
 
     def draw_lane_guides(self, battle: Battle) -> None:
-        """Delimita as faixas sem reapresentar a antiga grade de quadrados."""
-        guides = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        default = {
-            "city": (202, 216, 218, 82),
-            "desert": (128, 93, 49, 82),
-            "beach": (177, 132, 75, 74),
-        }[battle.region]
-        for boundary in range(1, ROWS):
-            y = int(BOARD.top + boundary * CELL_H)
-            is_shore = battle.region == "beach" and boundary in {2, 3}
-            color = (181, 241, 249, 145) if is_shore else default
-            thickness = 3 if is_shore else 2
-            for x in range(BOARD.left + 8, BOARD.right - 8, 96):
-                pygame.draw.line(guides, color, (x, y), (min(x + 54, BOARD.right - 8), y), thickness)
-        self.screen.blit(guides, (0, 0))
+        """Compatibilidade: os limites agora pertencem à própria pintura."""
+        return
 
     def draw_lane_bombs(self, battle: Battle) -> None:
         """Mostra a contenção visual própria de cada terreno antes da invasão."""
@@ -3490,21 +4052,16 @@ class Game:
             if cart.state == "spent":
                 continue
             y = cell_center(cart.row, 0, battle.region)[1]
-            x = cart.x if cart.state == "rolling" else BOARD.left - 18
+            x = cart.x if cart.state == "rolling" else float(LANE_BOMB_HOME_X)
             sprite = self.assets.images.get(battle.lane_bomb_asset_key(cart.row))
             is_water_buoy = battle.region == "beach" and cart.row in battle.water_rows
+            depth = lane_depth(battle.region, cart.row)
             if sprite and sprite.get_width() > 1:
-                width, height = (66, 52) if is_water_buoy else (74, 50)
-                self.blit_sprite(sprite, x - width / 2, y - height + 14, width, height)
-            else:
-                pygame.draw.rect(self.screen, (85, 94, 95), (int(x - 29), int(y - 23), 50, 24), border_radius=5)
-                pygame.draw.rect(self.screen, GOLD, (int(x - 8), int(y - 32), 23, 14), border_radius=4)
-            beacon = 4 + int(abs(math.sin(self.scene_elapsed * 8 + cart.row)) * 3)
-            _, accent = battle.lane_bomb_info(cart.row)
-            pygame.draw.circle(self.screen, accent, (int(x - 11), int(y - 39)), beacon)
-            if cart.state == "armed":
-                label = "BOIA" if is_water_buoy else "CARGA"
-                self.draw_text(label, self.fonts.tiny, accent, (x - 2, y + 16), "center", True)
+                # A contenção inteira fica dentro do terreno, antes da primeira
+                # casa, e compartilha exatamente a linha de contato da pista.
+                base_width, base_height = (54, 44) if is_water_buoy else (56, 42)
+                width, height = base_width * depth, base_height * depth
+                self.draw_actor_sprite(sprite, x, y, width, height, cart.motion, enemy=False)
 
     def draw_battle_top(self) -> None:
         assert self.battle is not None
@@ -3524,7 +4081,7 @@ class Game:
             metric_a, metric_b = self.card_metrics(data)
             self.draw_text(f"{data['cost']} SUP", self.fonts.tiny, GOLD, (rect.x + 51, rect.y + 15))
             self.draw_text(metric_a, self.fonts.tiny, WHITE, (rect.x + 51, rect.y + 35))
-            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "reload", "medic", "promoter"} else GRAY, (rect.x + 51, rect.y + 54))
+            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "promoter"} else GRAY, (rect.x + 51, rect.y + 54))
             if data.get("water_only"):
                 self.draw_text("ÁGUA", self.fonts.tiny, TEAL, (rect.centerx, rect.bottom - 15), "center")
         self.panel(pygame.Rect(WIDTH - 176, 8, 166, 104), 230, battle.region_color(), 8)
@@ -3570,156 +4127,620 @@ class Game:
             self.draw_text("N3", self.fonts.small, GOLD, (tooltip.x + 13, tooltip.y + 9))
             self.draw_text("Prêmio do chefe: ascende uma defesa por 18 s e recarrega a munição.", self.fonts.tiny, WHITE, (tooltip.x + 13, tooltip.y + 30))
 
+    def defender_sprite(self, battle: Battle, defender: Defender) -> pygame.Surface:
+        """Fonte visual da defesa ativa e da animação de derrota."""
+        return self.card_sprite(battle.region, defender.key, defender.sprite_index)
+
+    def enemy_sprite(self, battle: Battle, enemy: Enemy) -> pygame.Surface:
+        """Fonte visual do inimigo, centralizando os retratos especiais."""
+        if enemy.is_boss:
+            frames = self.assets.animation_frames.get(f"{battle.region}_boss_actions", [])
+            if len(frames) >= 12:
+                boss_row = REGIONS[battle.region]["bosses"].index(enemy.key)
+                row_frames = frames[boss_row * 4:boss_row * 4 + 4]
+                if enemy.motion.state == "skill":
+                    return row_frames[3]
+                if enemy.motion.state == "attack":
+                    return row_frames[2]
+                if enemy.motion.state in {"hit", "stunned"}:
+                    return row_frames[1]
+                return row_frames[enemy.motion.phase(fps=4.6, frames=2)]
+        sheet_key = {
+            ("city", "caminhante"): "city_walker_walk",
+            ("desert", "digger"): "desert_digger_states",
+            ("beach", "nadador"): "beach_swimmer_walk",
+        }.get((battle.region, enemy.key))
+        if sheet_key:
+            frames = self.assets.animation_frames.get(sheet_key, [])
+            if frames:
+                if enemy.key == "digger" and enemy.motion.state == "walk":
+                    frame_index = enemy.motion.phase(fps=5.5, frames=2)
+                elif enemy.key == "digger" and enemy.motion.state == "dig_enter":
+                    frame_index = min(4, 2 + int(enemy.motion.state_elapsed / 0.16))
+                elif enemy.key == "digger" and enemy.motion.state == "dig_tunnel":
+                    frame_index = 4
+                elif enemy.key == "digger" and enemy.motion.state == "dig_emerge":
+                    frame_index = 5
+                elif enemy.key == "digger" and enemy.motion.state == "attack":
+                    frame_index = 6
+                elif enemy.motion.state == "walk":
+                    frame_index = enemy.motion.phase(fps=10.0, frames=len(frames))
+                elif enemy.motion.state == "attack":
+                    frame_index = 2
+                elif enemy.motion.state in {"hit", "stunned"}:
+                    frame_index = 4
+                else:
+                    frame_index = 0
+                return frames[frame_index % len(frames)]
+        if enemy.key == "saltador" and "zombie_jumper_beta3" in self.assets.images:
+            return self.assets.images["zombie_jumper_beta3"]
+        if enemy.key == "rastejante" and battle.region == "city" and "zombie_crawler_beta3" in self.assets.images:
+            return self.assets.images["zombie_crawler_beta3"]
+        return self.assets.zombie(battle.region, int(enemy.data["sprite"]))
+
+    def draw_actor_sprite(
+        self,
+        sprite: pygame.Surface,
+        x: float,
+        ground_y: float,
+        width: float,
+        height: float,
+        motion: ActorMotion,
+        *,
+        enemy: bool,
+        vertical_offset: float = 0.0,
+        alpha: int = 255,
+        progress: float = 0.0,
+        state_override: str | None = None,
+        profile: str = "generic",
+    ) -> pygame.Rect:
+        """Desenha uma pose articulada preservando os pés no terreno real."""
+        if sprite.get_width() <= 1:
+            return pygame.Rect(int(x), int(ground_y), 1, 1)
+        sprite = self.assets.trimmed(sprite)
+        action_progress = clamp(float(progress), 0.0, 1.0)
+        if action_progress <= 0.0 and motion.event_left > 0:
+            action_progress = clamp(
+                motion.state_elapsed / max(0.001, motion.state_elapsed + motion.event_left),
+                0.0,
+                1.0,
+            )
+        if self.presenter is not None:
+            self.actor_commands.append(
+                ActorCommand(
+                    sprite=sprite,
+                    x=float(x),
+                    ground_y=float(ground_y),
+                    width=max(1.0, float(width)),
+                    height=max(1.0, float(height)),
+                    state=state_override or motion.state,
+                    elapsed=motion.state_elapsed,
+                    enemy=enemy,
+                    vertical_offset=vertical_offset,
+                    alpha=max(0, min(255, int(alpha))),
+                    hit_flash=motion.hit_flash,
+                    progress=action_progress,
+                    profile=profile,
+                )
+            )
+            return pygame.Rect(
+                int(x - width / 2),
+                int(ground_y + vertical_offset - height),
+                max(1, int(width)),
+                max(1, int(height)),
+            )
+        dx, dy, angle, scale_x, scale_y = actor_pose(
+            motion,
+            enemy=enemy,
+            profile=profile,
+            progress=action_progress,
+        )
+        size = (max(1, int(width * scale_x)), max(1, int(height * scale_y)))
+        rendered = pygame.transform.rotate(self.assets.scaled(sprite, *size), angle)
+        if alpha < 255:
+            rendered.set_alpha(max(0, alpha))
+        if motion.hit_flash > 0:
+            flash_alpha = int(105 * clamp(motion.hit_flash / 0.13, 0.0, 1.0))
+            flash = pygame.Surface(rendered.get_size(), pygame.SRCALPHA)
+            flash.fill((255, 238, 210, flash_alpha))
+            rendered.blit(flash, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        rect = rendered.get_rect(midbottom=(int(x + dx), int(ground_y + dy + vertical_offset)))
+        self.screen.blit(rendered, rect)
+        return rect
+
+    def draw_fallen(self, battle: Battle) -> None:
+        """Mostra uma queda curta antes de a silhueta sumir em partículas."""
+        for fallen in battle.fallen:
+            progress = clamp(fallen.elapsed / max(0.01, fallen.duration), 0.0, 1.0)
+            alpha = int(255 * (1.0 - progress))
+            motion = ActorMotion(state="dead", state_elapsed=fallen.elapsed, event_left=fallen.duration)
+            self.draw_actor_sprite(
+                fallen.sprite,
+                fallen.x,
+                fallen.y,
+                fallen.width,
+                fallen.height,
+                motion,
+                enemy=fallen.enemy,
+                alpha=alpha,
+                progress=progress,
+            )
+
+    def draw_visual_effects(self, battle: Battle) -> None:
+        """Exibe somente quadros rasterizados de matéria e impacto reais."""
+        styles = {
+            "flame_impact": ("elemental_effects", 0, 118, 92),
+            "water_impact": ("elemental_effects", 1, 132, 88),
+            "toxic_impact": ("elemental_effects", 2, 126, 96),
+            "toxic_wave": ("elemental_effects", 2, 212, 136),
+            "ground_slam": ("ability_effects", 0, 236, 126),
+            "arcane_cast": ("ability_effects", 1, 164, 174),
+            "tidal_surge": ("ability_effects", 2, 260, 142),
+            "explosion": ("combat_effects", 2, 184, 146),
+            "ballistic_impact": ("combat_effects", 0, 92, 66),
+        }
+        for effect in battle.effects:
+            # O gesto do Comandante já está no quadro de habilidade do próprio
+            # chefe; um anel desenhado por cima voltaria a ser um substituto.
+            if effect.kind == "command_aura":
+                continue
+            progress = clamp(effect.elapsed / max(0.01, effect.duration), 0.0, 1.0)
+            stage = min(3, int(progress * 4.0))
+            sheet, row, base_width, base_height = styles.get(
+                effect.kind,
+                ("combat_effects", 2, 184, 146),
+            )
+            growth = 0.80 + progress * 0.36
+            fade = 1.0 - clamp((progress - 0.72) / 0.28, 0.0, 1.0)
+            self.blit_effect_frame(
+                sheet,
+                row,
+                stage,
+                effect.x,
+                effect.y,
+                base_width * effect.scale * growth,
+                base_height * effect.scale * growth,
+                alpha=int(255 * fade),
+            )
+
+    def blit_effect_frame(
+        self,
+        sheet: str,
+        row: int,
+        stage: int,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        *,
+        alpha: int = 255,
+        angle: float = 0.0,
+        midbottom: bool = False,
+    ) -> pygame.Rect | None:
+        """Desenha um quadro pré-pintado; jamais fabrica um símbolo geométrico."""
+        frames = self.assets.effect_frames.get(sheet, [])
+        index = row * 4 + max(0, min(3, int(stage)))
+        if index >= len(frames) or frames[index].get_width() <= 1:
+            return None
+        rendered = self.assets.scaled(frames[index], width, height)
+        if angle:
+            rendered = pygame.transform.rotate(rendered, angle)
+        elif alpha < 255:
+            rendered = rendered.copy()
+        if alpha < 255:
+            rendered.set_alpha(max(0, min(255, int(alpha))))
+        if midbottom:
+            rect = rendered.get_rect(midbottom=(int(x), int(y)))
+        else:
+            rect = rendered.get_rect(center=(int(x), int(y)))
+        self.screen.blit(rendered, rect)
+        return rect
+
+    @staticmethod
+    def eased(value: float) -> float:
+        """Curva suave usada por mãos, carregadores e munição visível."""
+        value = clamp(value, 0.0, 1.0)
+        return value * value * (3.0 - 2.0 * value)
+
+    def draw_reload_action(
+        self,
+        defender: Defender,
+        rect: pygame.Rect,
+        scale: tuple[float, float],
+        depth: float,
+        progress: float,
+    ) -> None:
+        """Mostra a troca física de munição sem palavra, relógio ou ícone.
+
+        A mão sai da arma, alcança o cinto, carrega um pente/cartucho/cilindro
+        e o encaixa no equipamento. A barra de munição existente é o único
+        indicador abstrato; todo o restante é movimento corporal.
+        """
+        # A Beta 4 executa esse gesto na malha corporal OpenGL. O antigo braço
+        # de linhas e o carregador geométrico não devem voltar a ser exibidos.
+        return
+        role = str(defender.stats.get("role", ""))
+        if role in {"radio", "promoter", "barrier", "mine"}:
+            return
+        p = clamp(progress, 0.0, 1.0)
+        x, y = defender.x, defender.y
+        shoulder = (x + 2 * depth, y - scale[1] * 0.61)
+        receiver = (x + 22 * depth, y - scale[1] * 0.50)
+        pocket = (x - 7 * depth, y - scale[1] * 0.29)
+
+        if p < 0.22:
+            q = self.eased(p / 0.22)
+            hand = (lerp(receiver[0], pocket[0], q), lerp(receiver[1], pocket[1], q))
+        elif p < 0.44:
+            q = self.eased((p - 0.22) / 0.22)
+            hand = (pocket[0] - 2 * depth, pocket[1] + math.sin(q * math.pi) * 3 * depth)
+        elif p < 0.78:
+            q = self.eased((p - 0.44) / 0.34)
+            hand = (lerp(pocket[0], receiver[0], q), lerp(pocket[1], receiver[1], q))
+        else:
+            q = self.eased((p - 0.78) / 0.22)
+            rest = (x + 10 * depth, y - scale[1] * 0.52)
+            hand = (lerp(receiver[0], rest[0], q), lerp(receiver[1], rest[1], q))
+
+        elbow = (
+            lerp(shoulder[0], hand[0], 0.52) - 4 * depth,
+            lerp(shoulder[1], hand[1], 0.52) + 7 * depth,
+        )
+        sleeve = {
+            "city": (46, 69, 67),
+            "desert": (135, 105, 65),
+            "beach": (32, 72, 92),
+        }[defender.region]
+        pygame.draw.line(self.screen, sleeve, shoulder, elbow, max(2, int(6 * depth)))
+        pygame.draw.line(self.screen, sleeve, elbow, hand, max(2, int(5 * depth)))
+        pygame.draw.circle(self.screen, (198, 152, 111), (int(hand[0]), int(hand[1])), max(2, int(4 * depth)))
+
+        # O objeto aparece apenas depois de ser retirado do cinto e desaparece
+        # dentro da arma na fase de encaixe.
+        if 0.30 <= p <= 0.84:
+            alpha = int(255 * min(1.0, (p - 0.30) / 0.08, (0.84 - p) / 0.08))
+            item = pygame.Surface((max(8, int(15 * depth)), max(10, int(24 * depth))), pygame.SRCALPHA)
+            if role == "shotgun":
+                for offset in (3, 8):
+                    pygame.draw.rect(item, (172, 42, 38, alpha), (offset, 2, 4, item.get_height() - 4), border_radius=2)
+                    pygame.draw.line(item, (238, 187, 72, alpha), (offset, 2), (offset + 3, 2), 2)
+            elif role in {"mortar", "grenade"}:
+                pygame.draw.ellipse(item, (91, 104, 69, alpha), (2, 1, item.get_width() - 4, item.get_height() - 2))
+                pygame.draw.line(item, (231, 184, 78, alpha), (2, item.get_height() // 2), (item.get_width() - 2, item.get_height() // 2), 2)
+            elif role in {"flame", "poison", "waterjet"}:
+                canister = {
+                    "flame": (207, 93, 43, alpha),
+                    "poison": (91, 175, 74, alpha),
+                    "waterjet": (67, 177, 220, alpha),
+                }[role]
+                pygame.draw.rect(item, canister, (2, 2, item.get_width() - 4, item.get_height() - 4), border_radius=4)
+                pygame.draw.line(item, (225, 236, 228, alpha), (3, 6), (item.get_width() - 3, 6), 2)
+            else:
+                pygame.draw.rect(item, (48, 55, 55, alpha), (2, 1, item.get_width() - 4, item.get_height() - 2), border_radius=2)
+                pygame.draw.line(item, (151, 165, 160, alpha), (4, 5), (item.get_width() - 4, 5), 2)
+            rotated = pygame.transform.rotate(item, -18 + p * 26)
+            self.screen.blit(rotated, rotated.get_rect(center=(int(hand[0] + 3 * depth), int(hand[1] + 5 * depth))))
+
+    def draw_weapon_action(
+        self,
+        defender: Defender,
+        rect: pygame.Rect,
+        scale: tuple[float, float],
+        depth: float,
+    ) -> None:
+        """Detalhe mecânico do disparo que não existe no retrato estático."""
+        # O lançamento está no estado de ataque e o obus real aparece na folha
+        # de projéteis. Não desenhar braços ou munição com primitivas.
+        return
+        if defender.stats.get("role") != "mortar":
+            return
+        total = max(0.001, defender.motion.state_elapsed + defender.motion.event_left)
+        p = clamp(defender.motion.state_elapsed / total, 0.0, 1.0)
+        q = self.eased(clamp(p / 0.72, 0.0, 1.0))
+        start = (defender.x - 10 * depth, defender.y - scale[1] * 0.45)
+        tube = (defender.x + 18 * depth, defender.y - scale[1] * 0.30)
+        shell_x = lerp(start[0], tube[0], q)
+        shell_y = lerp(start[1], tube[1], q) - math.sin(q * math.pi) * 13 * depth
+        shoulder = (defender.x, defender.y - scale[1] * 0.60)
+        hand = (shell_x - 2 * depth, shell_y)
+        pygame.draw.line(self.screen, (87, 89, 69), shoulder, hand, max(2, int(5 * depth)))
+        shell = pygame.Surface((max(7, int(11 * depth)), max(12, int(23 * depth))), pygame.SRCALPHA)
+        pygame.draw.ellipse(shell, (101, 116, 73, 255), shell.get_rect())
+        pygame.draw.line(shell, GOLD, (2, shell.get_height() // 2), (shell.get_width() - 2, shell.get_height() // 2), 2)
+        self.screen.blit(shell, shell.get_rect(center=(int(shell_x), int(shell_y))))
+
     def draw_defender(self, defender: Defender) -> None:
         assert self.battle is not None
         battle = self.battle
         x, y = defender.x, defender.y
-        shadow = pygame.Surface((100, 32), pygame.SRCALPHA)
+        role = defender.stats["role"]
+        scale = defender_render_scale(defender)
+        depth = lane_depth(battle.region, defender.row)
+        shadow_width = max(28, int(scale[0] * (0.82 if role in {"barrier", "boat", "sub"} else 0.68)))
+        shadow_height = max(6, int(13 * depth))
+        shadow = pygame.Surface((shadow_width, shadow_height), pygame.SRCALPHA)
         if battle.cell_is_water(defender.row, defender.col):
             pygame.draw.ellipse(shadow, (90, 220, 235, 105), shadow.get_rect(), width=2)
-            pygame.draw.ellipse(shadow, (7, 36, 52, 85), shadow.get_rect().inflate(-18, -10))
+            pygame.draw.ellipse(shadow, (7, 36, 52, 85), shadow.get_rect().inflate(-10, -4))
         else:
             pygame.draw.ellipse(shadow, (0, 0, 0, 100), shadow.get_rect())
-        self.screen.blit(shadow, (int(x - 50), int(y + 18)))
-        bob = math.sin(self.scene_elapsed * 2.1 + defender.col) * 1.3
-        # A mesma fonte de arte atende a carta e o objeto no terreno. Isso
-        # separa as minas de rua/areia/água dos carrinhos de contenção.
-        sprite = self.card_sprite(battle.region, defender.key, defender.sprite_index)
-        role = defender.stats["role"]
-        if role == "mine":
-            scale = (76, 62) if defender.stats.get("water_only") else (82, 68)
-        elif role in {"barrier", "boat", "sub"}:
-            scale = (105, 82)
-        else:
-            scale = (86, 98)
-        self.blit_sprite(sprite, x - scale[0] / 2, y - scale[1] + bob, *scale)
-        if defender.ascended > 0:
-            pygame.draw.circle(self.screen, GOLD, (int(x), int(y - 16)), 42, 2)
-            pygame.draw.circle(self.screen, (255, 232, 116), (int(x), int(y - 16)), 31, 1)
-            self.draw_text("N3", self.fonts.tiny, GOLD, (x, y - 73), "center")
-            if defender.stats["role"] == "reload" and defender.stats["level"] >= 2:
-                turret_x = min(BOARD.right - 18, x + CELL_W * 0.7)
-                turret_y = y + 17
-                pygame.draw.ellipse(self.screen, (17, 28, 32), (int(turret_x - 19), int(turret_y - 8), 38, 15))
-                pygame.draw.rect(self.screen, (118, 147, 151), (int(turret_x - 13), int(turret_y - 25), 26, 21), border_radius=4)
-                pygame.draw.rect(self.screen, TEAL, (int(turret_x + 8), int(turret_y - 20), 24, 6), border_radius=3)
-                self.draw_text("INF", self.fonts.tiny, GOLD, (turret_x, turret_y - 37), "center")
-        if defender.stun > 0:
-            self.draw_text("STUN", self.fonts.tiny, GOLD, (x, y - 94), "center", True)
+        self.screen.blit(shadow, shadow.get_rect(midbottom=(int(x), int(y + 3))))
+        # A mesma fonte de arte atende carta, campo e queda. A pose em si
+        # muda conforme o estado emitido pela lógica de combate.
+        sprite = self.defender_sprite(battle, defender)
+        reload_progress = (
+            1.0 - defender.reload_timer / max(0.01, defender.reload_total)
+            if defender.reloading
+            else 0.0
+        )
+        rect = self.draw_actor_sprite(
+            sprite,
+            x,
+            y,
+            *scale,
+            defender.motion,
+            enemy=False,
+            progress=reload_progress,
+            profile=defender_animation_profile(defender),
+        )
+        world_target = self.screen
+        if self.overlay_surface is not None:
+            self.screen = self.overlay_surface
+        if defender.motion.state == "attack":
+            total = max(0.001, defender.motion.state_elapsed + defender.motion.event_left)
+            attack_progress = clamp(defender.motion.state_elapsed / total, 0.0, 1.0)
+            stage = min(3, int(attack_progress * 4.0))
+            muzzle = (rect.right - 2, rect.centery - int(6 * depth))
+            if role in {"flame", "waterjet", "poison"}:
+                row = {"flame": 0, "waterjet": 1, "poison": 2}[role]
+                self.blit_effect_frame(
+                    "elemental_effects", row, min(2, stage), *muzzle,
+                    58 * depth, 42 * depth,
+                )
+            elif role not in {"radio", "promoter", "barrier", "mine"}:
+                row = 1 if role == "shotgun" else 0
+                self.blit_effect_frame(
+                    "combat_effects", row, stage, *muzzle,
+                    (94 if role == "shotgun" else 68) * depth,
+                    (62 if role == "shotgun" else 46) * depth,
+                )
         if defender.corrosion > 0:
-            self.draw_text("COR", self.fonts.tiny, (143, 232, 104), (x, y - 82), "center")
-        self.health_bar(x - 38, y + 36, 76, defender.hp / defender.max_hp, (89, 214, 144))
+            self.blit_effect_frame(
+                "elemental_effects", 2, int(defender.corrosion * 5.0) % 4,
+                x, y - scale[1] * 0.38, scale[0] * 0.72, scale[1] * 0.62,
+                alpha=168,
+            )
+        bar_width = max(42, int(76 * depth))
+        self.health_bar(x - bar_width / 2, y + 7, bar_width, defender.hp / defender.max_hp, (89, 214, 144))
         if defender.max_ammo:
-            self.ammo_bar(x - 30, y + 47, 60, defender.ammo / max(1, defender.max_ammo))
+            ammo_width = max(34, int(60 * depth))
+            ammo_ratio = (
+                1.0 - defender.reload_timer / max(0.01, defender.reload_total)
+                if defender.reloading
+                else defender.ammo / max(1, defender.max_ammo)
+            )
+            self.ammo_bar(x - ammo_width / 2, y + 16, ammo_width, ammo_ratio)
+        self.screen = world_target
 
     def draw_enemy(self, enemy: Enemy) -> None:
         assert self.battle is not None
         battle = self.battle
-        bob_speed = 10 if enemy.is_boss else 14
-        bob = math.sin(enemy.age * bob_speed + enemy.row * 0.9) * (2.5 if enemy.is_boss else 1.8)
-        stride = math.sin(enemy.age * bob_speed * 0.5) * 2
-        shadow = pygame.Surface((120 if enemy.is_boss else 76, 26), pygame.SRCALPHA)
         water_enemy = battle.region == "beach" and enemy.row in battle.water_rows
+        scale = enemy_render_scale(enemy, battle.region)
+        depth = lane_depth(battle.region, enemy.row)
+        shadow_width = max(28, int(scale[0] * (0.86 if enemy.is_boss else 0.68)))
+        shadow_height = max(6, int(13 * depth))
+        shadow = pygame.Surface((shadow_width, shadow_height), pygame.SRCALPHA)
         if water_enemy:
             pygame.draw.ellipse(shadow, (91, 221, 238, 112), shadow.get_rect(), width=2)
-            pygame.draw.ellipse(shadow, (8, 37, 50, 88), shadow.get_rect().inflate(-16, -8))
+            pygame.draw.ellipse(shadow, (8, 37, 50, 88), shadow.get_rect().inflate(-10, -4))
         else:
             pygame.draw.ellipse(shadow, (0, 0, 0, 115), shadow.get_rect())
-        self.screen.blit(shadow, (int(enemy.x - shadow.get_width() / 2), int(enemy.y + 18)))
-        # O Saltador recebeu um retrato separado para não trazer uma pilastra
-        # de cenário dentro da própria silhueta. As demais ameaças seguem seus
-        # atlases regionais, preservando roupa e identidade de cada mapa.
-        if enemy.key == "saltador" and "zombie_jumper_beta3" in self.assets.images:
-            sprite = self.assets.images["zombie_jumper_beta3"]
-        elif enemy.key == "rastejante" and battle.region == "city" and "zombie_crawler_beta3" in self.assets.images:
-            sprite = self.assets.images["zombie_crawler_beta3"]
-        else:
-            sprite = self.assets.zombie(battle.region, int(enemy.data["sprite"]))
-        scale = (132, 142) if enemy.is_boss else ((116, 82) if enemy.key == "rastejante" and battle.region == "city" else ((90, 106) if enemy.key == "saltador" else (82, 96)))
+        self.screen.blit(shadow, shadow.get_rect(midbottom=(int(enemy.x), int(enemy.y + 3))))
+        sprite = self.enemy_sprite(battle, enemy)
 
-        # Durante o túnel o Escavador não fica invisível: uma crista de terra
-        # percorre a faixa, com poeira/saída do outro lado e a barra de vida
-        # sempre visível. Isso torna clara a regra de atravessar só uma defesa.
-        if enemy.dig_state == "tunnel":
-            ripple = math.sin(enemy.age * 26) * 4
-            mound = pygame.Rect(int(enemy.x - 31), int(enemy.y + 5 + ripple), 62, 21)
-            pygame.draw.ellipse(self.screen, (94, 72, 42), mound)
-            pygame.draw.ellipse(self.screen, (180, 145, 79), mound.inflate(-18, -8))
-            pygame.draw.arc(self.screen, (235, 202, 126), mound.inflate(-8, -4), math.pi, math.tau, 2)
-            self.health_bar(enemy.x - 32, enemy.y + 31, 64, enemy.hp / enemy.max_hp, RED)
-            return
-
-        if enemy.stun > 0:
-            angle = math.sin(enemy.age * 18) * 8
-        else:
-            angle = stride
-        rendered = pygame.transform.rotate(self.assets.scaled(sprite, *scale), angle)
         vertical_offset = 0.0
         alpha = 255
+        top, bottom = lane_bounds(battle.region, enemy.row)
+        lane_height = bottom - top
         if enemy.jump_state:
             progress = clamp(1.0 - enemy.jump_timer / max(0.01, enemy.jump_duration), 0.0, 1.0)
-            vertical_offset = -math.sin(progress * math.pi) * CELL_H * 0.78
+            vertical_offset = -math.sin(progress * math.pi) * lane_height * 0.78
         elif enemy.dig_state == "enter":
             progress = clamp(1.0 - enemy.dig_timer / max(0.01, enemy.dig_duration), 0.0, 1.0)
-            vertical_offset = CELL_H * 0.42 * progress
+            vertical_offset = lane_height * 0.42 * progress
             alpha = int(255 * (1.0 - progress * 0.42))
         elif enemy.dig_state == "emerge":
             progress = clamp(1.0 - enemy.dig_timer / max(0.01, enemy.dig_duration), 0.0, 1.0)
-            vertical_offset = CELL_H * 0.42 * (1.0 - progress)
+            vertical_offset = lane_height * 0.42 * (1.0 - progress)
             alpha = int(146 + 109 * progress)
-        if alpha < 255:
-            rendered.set_alpha(alpha)
-        self.screen.blit(rendered, (int(enemy.x - scale[0] / 2), int(enemy.y - scale[1] + bob + vertical_offset)))
+        state_override = (
+            "swim"
+            if water_enemy and enemy.motion.state == "walk"
+            else None
+        )
+        rect = self.draw_actor_sprite(
+            sprite,
+            enemy.x,
+            enemy.y,
+            *scale,
+            enemy.motion,
+            enemy=True,
+            vertical_offset=vertical_offset,
+            alpha=alpha,
+            state_override=state_override,
+            profile=enemy_animation_profile(enemy),
+        )
+        world_target = self.screen
+        if self.overlay_surface is not None:
+            self.screen = self.overlay_surface
         if enemy.burn > 0:
-            pygame.draw.circle(self.screen, (244, 133, 47), (int(enemy.x), int(enemy.y - 35)), 13, 2)
+            self.blit_effect_frame(
+                "elemental_effects", 0, int(enemy.age * 11.0) % 4,
+                enemy.x, enemy.y + 1, scale[0] * 0.94, scale[1] * 0.78,
+                alpha=205, midbottom=True,
+            )
         if enemy.poisoned > 0:
-            pygame.draw.circle(self.screen, (132, 239, 80), (int(enemy.x), int(enemy.y - 35)), 17, 2)
-            bubble_y = int(enemy.y - 58 - abs(math.sin(enemy.age * 5)) * 7)
-            pygame.draw.circle(self.screen, (184, 255, 105), (int(enemy.x + 12), bubble_y), 4, 1)
+            self.blit_effect_frame(
+                "elemental_effects", 2, int(enemy.age * 8.0) % 4,
+                enemy.x, enemy.y - scale[1] * 0.42,
+                scale[0] * 1.04, scale[1] * 0.72, alpha=176,
+            )
         if enemy.soaked > 0:
-            pygame.draw.circle(self.screen, (100, 222, 241), (int(enemy.x), int(enemy.y - 35)), 15, 2)
-        if enemy.corrosion > 0:
-            pygame.draw.circle(self.screen, (121, 225, 96), (int(enemy.x), int(enemy.y - 35)), 16, 1)
+            self.blit_effect_frame(
+                "elemental_effects", 1, int(enemy.age * 9.0) % 4,
+                enemy.x, enemy.y + 2, scale[0] * 1.15, scale[1] * 0.58,
+                alpha=182, midbottom=True,
+            )
+        if enemy.corrosion > 0 and enemy.poisoned <= 0:
+            self.blit_effect_frame(
+                "elemental_effects", 2, int(enemy.age * 7.0) % 4,
+                enemy.x, enemy.y - scale[1] * 0.46,
+                scale[0] * 0.76, scale[1] * 0.54, alpha=154,
+            )
         if "steal" in enemy.tags:
-            pygame.draw.circle(self.screen, GOLD, (int(enemy.x), int(enemy.y - 75)), 14, 2)
-            self.draw_text("CLIQUE", self.fonts.tiny, GOLD, (enemy.x, enemy.y - 96), "center")
-        width = 104 if enemy.is_boss else 64
-        self.health_bar(enemy.x - width / 2, enemy.y + 31, width, enemy.hp / enemy.max_hp, RED)
-        if enemy.is_boss:
-            self.draw_text(enemy.data["name"], self.fonts.tiny, RED, (enemy.x, enemy.y - 103), "center")
+            self.blit_effect_frame(
+                "ability_effects", 1, int(enemy.age * 6.0) % 4,
+                enemy.x, enemy.y - scale[1] * 0.46,
+                scale[0] * 1.28, scale[1] * 1.05, alpha=188,
+            )
+        width = (104 if enemy.is_boss else 64) * depth
+        self.health_bar(enemy.x - width / 2, enemy.y + 7, width, enemy.hp / enemy.max_hp, RED)
+        self.screen = world_target
+
+    @staticmethod
+    def flow_points(
+        start: tuple[float, float],
+        end: tuple[float, float],
+        elapsed: float,
+        amplitude: float,
+        count: int = 18,
+    ) -> list[tuple[int, int]]:
+        """Constrói um jato contínuo ondulado entre bocal e frente do fluxo."""
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length = max(1.0, math.hypot(dx, dy))
+        normal_x, normal_y = -dy / length, dx / length
+        points: list[tuple[int, int]] = []
+        for index in range(max(3, count)):
+            q = index / max(1, count - 1)
+            envelope = math.sin(q * math.pi)
+            wave = math.sin(q * math.tau * 2.1 - elapsed * 31.0) * amplitude * envelope
+            points.append(
+                (
+                    int(lerp(start[0], end[0], q) + normal_x * wave),
+                    int(lerp(start[1], end[1], q) + normal_y * wave),
+                )
+            )
+        return points
+
+    @staticmethod
+    def ribbon_polygon(
+        points: list[tuple[int, int]],
+        start_width: float,
+        end_width: float,
+        *,
+        taper_tip: bool = False,
+    ) -> list[tuple[int, int]]:
+        """Cria as duas bordas de um fluxo para evitar o efeito de bolinhas."""
+        if len(points) < 2:
+            return points
+        upper: list[tuple[int, int]] = []
+        lower: list[tuple[int, int]] = []
+        for index, point in enumerate(points):
+            before = points[max(0, index - 1)]
+            after = points[min(len(points) - 1, index + 1)]
+            dx, dy = after[0] - before[0], after[1] - before[1]
+            length = max(1.0, math.hypot(dx, dy))
+            normal_x, normal_y = -dy / length, dx / length
+            q = index / max(1, len(points) - 1)
+            width = lerp(start_width, end_width, q)
+            if taper_tip:
+                tip = clamp((q - 0.68) / 0.32, 0.0, 1.0)
+                smooth_tip = tip * tip * (3.0 - 2.0 * tip)
+                width *= lerp(1.0, 0.08, smooth_tip)
+            upper.append((int(point[0] + normal_x * width), int(point[1] + normal_y * width)))
+            lower.append((int(point[0] - normal_x * width), int(point[1] - normal_y * width)))
+        return upper + list(reversed(lower))
+
+    def draw_elemental_stream(self, projectile: Projectile, x: float, y: float) -> None:
+        """Alongamento de um quadro físico de chama, água ou veneno."""
+        start_x, start_y = float(projectile.x), float(projectile.y)
+        dx, dy = float(x) - start_x, float(y) - start_y
+        distance = math.hypot(dx, dy)
+        if distance < 3.0:
+            return
+        progress = clamp(projectile.elapsed / max(0.01, projectile.travel), 0.0, 1.0)
+        row = {"flame": 0, "waterjet": 1, "poison": 2}[projectile.kind]
+        stage = min(3, int(progress * 4.0))
+        height = {"flame": 74.0, "waterjet": 58.0, "poison": 70.0}[projectile.kind]
+        angle = -math.degrees(math.atan2(dy, dx))
+        self.blit_effect_frame(
+            "elemental_effects",
+            row,
+            stage,
+            start_x + dx * 0.5,
+            start_y + dy * 0.5,
+            max(48.0, distance + 42.0),
+            height,
+            alpha=238,
+            angle=angle,
+        )
 
     def draw_projectiles(self, battle: Battle) -> None:
+        projectile_art = {
+            "rifle": (0, 0, 30, 9),
+            "tracer": (0, 0, 27, 8),
+            "shotgun": (0, 1, 28, 13),
+            "sniper": (0, 2, 38, 10),
+            "fuzileiro": (0, 3, 34, 10),
+            "boat": (0, 3, 34, 10),
+            "turret": (0, 3, 32, 10),
+            "grenade": (1, 0, 28, 28),
+            "mortar": (1, 1, 38, 24),
+            "bazooka": (1, 2, 48, 22),
+            "torpedo": (1, 3, 52, 23),
+            "acid": (2, 0, 34, 24),
+            "enemy_bullet": (2, 1, 31, 12),
+            "drone": (2, 2, 38, 18),
+        }
         for projectile in battle.projectiles:
+            if projectile.elapsed < 0:
+                continue
             t = clamp(projectile.elapsed / projectile.travel, 0, 1)
             x = lerp(projectile.x, projectile.target_x, t)
             y = lerp(projectile.y, projectile.target_y, t) - (math.sin(t * math.pi) * 46 if projectile.kind in {"grenade", "mortar", "bazooka"} else 0)
-            colors = {
-                "rifle": (245, 223, 126),
-                "boat": (126, 221, 239),
-                "sniper": (215, 241, 255),
-                "shotgun": (255, 206, 91),
-                "grenade": (237, 148, 60),
-                "mortar": (255, 139, 78),
-                "bazooka": (246, 109, 60),
-                "flame": (246, 142, 45),
-                "poison": (132, 239, 80),
-                "waterjet": (102, 224, 244),
-                "torpedo": (74, 207, 237),
-                "drone": (123, 223, 207),
-                "turret": (154, 237, 226),
-                "acid": (119, 231, 90),
-                "enemy_bullet": (240, 100, 85),
-            }
-            color = colors.get(projectile.kind, WHITE)
-            size = 7 if projectile.kind in {"grenade", "mortar", "bazooka", "torpedo"} else 4
-            pygame.draw.circle(self.screen, color, (int(x), int(y)), size)
+            if projectile.kind in {"flame", "poison", "waterjet"}:
+                self.draw_elemental_stream(projectile, x, y)
+                continue
+            art = projectile_art.get(projectile.kind)
+            if not art:
+                continue
+            row, column, width, height = art
+            next_t = min(1.0, t + 0.025)
+            next_x = lerp(projectile.x, projectile.target_x, next_t)
+            next_y = lerp(projectile.y, projectile.target_y, next_t) - (
+                math.sin(next_t * math.pi) * 46
+                if projectile.kind in {"grenade", "mortar", "bazooka"}
+                else 0
+            )
+            angle = -math.degrees(math.atan2(next_y - y, next_x - x))
+            source_row = int(getattr(projectile.owner, "row", 0))
+            depth = lane_depth(battle.region, source_row)
+            self.blit_effect_frame(
+                "projectile_sprites",
+                row,
+                column,
+                x,
+                y,
+                width * depth,
+                height * depth,
+                alpha=176 if projectile.kind == "tracer" else 255,
+                angle=angle,
+            )
 
     def draw_particles(self, battle: Battle) -> None:
-        for particle in battle.particles:
-            alpha = int(255 * clamp(particle.ttl / 0.9, 0, 1))
-            surf = pygame.Surface((int(particle.size * 2 + 2), int(particle.size * 2 + 2)), pygame.SRCALPHA)
-            pygame.draw.circle(surf, (*particle.color, alpha), (surf.get_width() // 2, surf.get_height() // 2), int(particle.size))
-            self.screen.blit(surf, (int(particle.x - surf.get_width() / 2), int(particle.y - surf.get_height() / 2)))
+        # Partículas circulares foram retiradas. Impactos e matéria usam folhas
+        # rasterizadas; textos de dano continuam sendo informação de HUD.
         for text in battle.texts:
             self.draw_text(text.text, self.fonts.tiny, text.color, (text.x, text.y), "center", True)
 
@@ -3788,8 +4809,6 @@ class Game:
         }
         if key == "atirador_lancha":
             return self.assets.images["beach_boat_shooter"]
-        if region == "beach" and key == "mecanico":
-            return self.assets.images["beach_drone_operator_n1"]
         asset_key = terrain_mine_assets.get(region, {}).get(key)
         if asset_key:
             return self.assets.images[asset_key]
@@ -3814,11 +4833,6 @@ class Game:
         if role == "radio":
             gain = 14 if level == 1 else 28
             return f"SUP +{gain}", f"CICLO {float(data['cooldown']):.1f}s"
-        if role == "reload":
-            ammo = 4 if level == 1 else 7
-            return f"RECARGA +{ammo}", f"RAIO {int(data['range'])}"
-        if role == "medic":
-            return ("LIMPA DEBUFF", f"RAIO {int(data['range'])}") if level == 1 else ("CURA +26", f"RAIO {int(data['range'])}")
         if role == "waterjet":
             return f"DANO {int(data['damage'])}", f"LENTO 32% • ALC {int(data['range'])}"
         if role == "poison":
@@ -3830,7 +4844,9 @@ class Game:
         if role == "mine":
             area = "ÁREA" if data.get("water_only") else ("SEGURA" if level >= 2 else "1 ALVO")
             return f"DANO {int(data['damage'])}", area
-        return f"DANO {int(data['damage'])}", f"MUN {int(data['ammo'])} • ALC {int(data['range'])}"
+        reload_time = weapon_reload_seconds(data)
+        reload_label = f" • REC {reload_time:.0f}s" if reload_time else ""
+        return f"DANO {int(data['damage'])}", f"MUN {int(data['ammo'])}{reload_label}"
 
     def draw_wrapped(self, text: str, font: pygame.font.Font, color: tuple[int, int, int], rect: pygame.Rect, lines: int, center: bool = False) -> None:
         words = text.split()
@@ -3852,6 +4868,13 @@ class Game:
             self.draw_text(line, font, color, (x, y), anchor)
 
     def draw(self) -> None:
+        # Atores OpenGL ficam entre o mundo e o HUD. A cada quadro as duas
+        # superfícies são reconstruídas; nenhuma animação deixa rastros.
+        self.screen = self.world_surface
+        self.world_surface.fill((0, 0, 0, 255))
+        self.actor_commands.clear()
+        if self.overlay_surface is not None:
+            self.overlay_surface.fill((0, 0, 0, 0))
         if self.scene == "loading":
             self.draw_loading()
         elif self.scene == "title":
