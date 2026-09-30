@@ -5,13 +5,25 @@ __pycache__/
 # Progresso pessoal gerado pelo jogo
 campanha_v7.json
 
-# Materiais de versões anteriores preservados no diretório de trabalho.
-# A Beta 3 executa somente com assets/v7, portanto eles não entram no
-# repositório/distribuição nova, mas continuam intactos no computador.
+# Material local redundante; as versões históricas publicadas estão em historico/.
 .package-v7/
 .package-v7-1/
-assets/hd/
-assets/units/
-assets/zombies/
-assets/menu_backdrop.png
+/assets/hd/
+/assets/units/
+/assets/zombies/
+/assets/menu_backdrop.png
 v7*_preview.png
+
+# Fontes brutas e renderizações intermediárias continuam locais. A pasta
+# audio_beta4 contém os derivados usados pelo jogo; SOURCES.md mantém a origem.
+assets/audio_sources_cc0/*
+!assets/audio_sources_cc0/SOURCES.md
+CENARIOS_BETA4_CONCEITOS/qa/
+CENARIOS_BETA4_CONCEITOS/ARQUIVO_REJEITADO_NAO_USAR/
+CENARIOS_BETA4_CONCEITOS/variantes_imagegen/
+PIXEL_ART_SPRITES_BETA4/source_generated/
+visual_qa_beta4/*
+!visual_qa_beta4/entrega/
+animation_previews/
+animation_lab_headless.png
+PIXEL_ART_SPRITES_BETA4.zip

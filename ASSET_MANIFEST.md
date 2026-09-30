@@ -72,6 +72,7 @@ Esta dupla substitui o lança-chamas exclusivamente na Praia. Ela luta da areia,
 | Arquivo | Origem e direção |
 | --- | --- |
 | assets/v7/beta4_toxic_impact.png | Arte original gerada para este projeto como impacto químico: explosão de ácido verde-limão com orbe central, gotas, pequenas bolhas e névoa venenosa. Fundo genuinamente transparente, sem personagens, cenário, texto, marca, logotipo ou elementos de jogos de terceiros. É carregada na abertura e escalada/rotacionada pelo Pygame no impacto do Pulverizador e Canhão de Veneno, além de ataques ácidos inimigos. |
+| assets/beta4_producao/city_antiplague_grenade_8x5_v2.png | Folha 8x5 original revisada do Especialista Antipraga. Mantém uniforme, escala e pivô da versão anterior, substitui pulverizador/mangueira por lançador químico curto com tambor e deixa o projétil separado para o motor alinhar a granada na boca do cano. Criada com a ferramenta integrada de edição de imagem a partir da folha v1. |
 
 ## Animação desenhada da Beta 4
 
