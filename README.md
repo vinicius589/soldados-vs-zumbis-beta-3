@@ -17,8 +17,8 @@ O código está disponível nas mesmas pastas, mas **não há executável nativo
 Para comparar as versões antigas e consultar as Alfas, use as pastas `alphas/` e `betas/` ou a [página de versões e downloads](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30).
 
 Este repositório guarda o jogo **e a evolução dele**, sem espalhar código,
-sprites, prompts e relatórios pela página inicial. Se você só quer jogar,
-entre em [`betas/`](betas/) e escolha uma versão. Se quer entender o que foi
+sprites, prompts e relatórios pela página inicial. Para comparar versões
+antigas, entre em [`betas/`](betas/) e escolha uma versão. Se quer entender o que foi
 corrigido entre elas, consulte [`alphas/`](alphas/). Os textos de planejamento
 e registros antigos estão separados em [`material-bruto/`](material-bruto/).
 
