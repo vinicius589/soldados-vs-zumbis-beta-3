@@ -11,12 +11,3 @@ betas/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
 betas/**/*.wav filter=lfs diff=lfs merge=lfs -text
 betas/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 betas/**/*.gif filter=lfs diff=lfs merge=lfs -text
-assets/beta4_producao/*.png filter=lfs diff=lfs merge=lfs -text
-assets/audio_beta4/*.wav filter=lfs diff=lfs merge=lfs -text
-assets/v7/*.png filter=lfs diff=lfs merge=lfs -text
-visual_qa_beta4/entrega/*.gif filter=lfs diff=lfs merge=lfs -text
-CENARIOS_BETA4_CONCEITOS/**/*.png filter=lfs diff=lfs merge=lfs -text
-PIXEL_ART_SPRITES_BETA4/**/*.png filter=lfs diff=lfs merge=lfs -text
-PROTOTIPO_CARTA_CAMPO/**/*.png filter=lfs diff=lfs merge=lfs -text
-PROTOTIPO_COMBATE/**/*.png filter=lfs diff=lfs merge=lfs -text
-visual_qa_beta4/entrega/*.png filter=lfs diff=lfs merge=lfs -text

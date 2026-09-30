@@ -146,9 +146,9 @@ Esta pasta contém a Beta 4 jogável. As etapas anteriores ficam separadas em
 Cada etapa tem código e `NOTAS_DA_VERSAO.md` próprios.
 
 As decisões ainda abertas e os pontos que precisam de aprovação visual estão
-em [`../../PENDENCIAS_PARA_EQUIPE.md`](../../PENDENCIAS_PARA_EQUIPE.md). A origem do áudio
+em [`../../material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md`](../../material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md). A origem do áudio
 está em [`assets/audio_sources_cc0/SOURCES.md`](assets/audio_sources_cc0/SOURCES.md).
-O [`../../DOCUMENTACAO_E_DECISOES.md`](../../DOCUMENTACAO_E_DECISOES.md) organiza o restante
+O [`../../material-bruto/README.md`](../../material-bruto/README.md) organiza o restante
 das fichas, ideias, perguntas, protótipos e critérios sem confundir propostas
 antigas com o jogo implementado.
 Imagens e áudio extensos usam Git LFS; após clonar, execute `git lfs pull`

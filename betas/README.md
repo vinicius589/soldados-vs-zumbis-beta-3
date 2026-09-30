@@ -13,12 +13,10 @@ Também é possível instalar seu `requirements.txt` e executar `python main.py`
 | Beta 4 | [`beta-4/`](beta-4/) | Campanha regional de 12 ondas, oito cartas por mapa, áudio e sistema atual de animações e counters. |
 
 Cada pasta contém `NOTAS_DA_VERSAO.md` com o incremento identificado nos
-arquivos, diferenças importantes e limites do que foi testado. A Beta 4 tem
-uma cópia executável própria; o código antigo na raiz foi mantido por
-compatibilidade com os caminhos locais anteriores, mas a equipe deve partir
-de `betas/beta-4/` para novas alterações.
+arquivos, diferenças importantes e limites do que foi testado. A Beta 4 é
+a pasta de trabalho da equipe; a raiz agora é só um guia, sem cópia do jogo.
 
 As etapas de correção e os códigos usados como referência ficam em
 [`../alphas/`](../alphas/). A linha do tempo e as decisões ainda não tomadas
 ficam na [página inicial](../README.md) e em
-[`../PROXIMAS_DECISOES.md`](../PROXIMAS_DECISOES.md).
+[`../material-bruto/textos/PROXIMAS_DECISOES.md`](../material-bruto/textos/PROXIMAS_DECISOES.md).

@@ -1,7 +1,7 @@
 # Beta 4 — entrega executável para a equipe
 
-Esta pasta é uma cópia **independente** da Beta 4 que foi publicada na raiz
-em 30/09/2026. Abra `executar.bat` aqui; todas as dependências do jogo estão
+Esta pasta é a **Beta 4 executável** publicada para a equipe em
+30/09/2026. Abra `executar.bat` aqui; todas as dependências do jogo estão
 dentro desta pasta, sem procurar arquivos nas Alfas ou em outras Betas.
 
 O estado integrado tem três mapas, oito cartas fixas por mapa (24 no total),
@@ -17,5 +17,5 @@ A pasta contém arte, áudio, código, documentação, ferramentas e testes. Em
 passaram numa cópia limpa. Isso **não aprova** automaticamente a qualidade
 visual dos efeitos, a sensação de cada animação ou a jogabilidade de todas
 as ondas. As pendências e perguntas continuam em
-[`../../PENDENCIAS_PARA_EQUIPE.md`](../../PENDENCIAS_PARA_EQUIPE.md) e
-[`../../PROXIMAS_DECISOES.md`](../../PROXIMAS_DECISOES.md).
+[`../../material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md`](../../material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md) e
+[`../../material-bruto/textos/PROXIMAS_DECISOES.md`](../../material-bruto/textos/PROXIMAS_DECISOES.md).
