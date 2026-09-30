@@ -34,9 +34,11 @@ Arquivos grandes de arte e áudio usam Git LFS.
 
 ## Baixar o jogo com as imagens completas
 
-Use o arquivo **soldados-vs-zumbis-pacote-completo.zip** da
+Use o arquivo **soldados-vs-zumbis-pacote-jogavel.zip** da
 [página de downloads do projeto](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/pacote-completo-2026-09-30).
 Extraia o ZIP e abra o `executar.bat` da Alfa ou Beta que quiser testar.
+As referências de produção ficam no download separado
+**soldados-vs-zumbis-material-bruto.zip**, na mesma página.
 
 **Não use “Code → Download ZIP” nem “Source code (zip)” para jogar.** Esses
 arquivos automáticos do GitHub contêm apenas referências de poucos bytes no

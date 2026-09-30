@@ -28,7 +28,7 @@ def main() -> int:
     print("\nERRO: este pacote nao contem as imagens e os sons completos.")
     print(f"Foram encontrados {len(atalhos)} arquivos que sao apenas atalhos do Git LFS.")
     print(f"Exemplo: {atalhos[0].relative_to(pasta)}")
-    print("Baixe 'soldados-vs-zumbis-pacote-completo.zip' em:")
+    print("Baixe 'soldados-vs-zumbis-pacote-jogavel.zip' em:")
     print("https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/pacote-completo-2026-09-30")
     print("O botao 'Code > Download ZIP' nao serve para jogar este projeto.\n")
     return 2
