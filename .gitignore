@@ -3,12 +3,15 @@ __pycache__/
 *.py[cod]
 .venv-beta4/
 
+# Copias locais do acervo historico: publicadas separadamente nos Releases.
+alphas/
+betas/
+material-bruto/
+Soldados vs Zumbis Beta 4/
+
 # Progresso pessoal gerado pelo jogo
 campanha_v7.json
 campaign_progress.json
-
-# Rascunhos locais preservados, mas não publicados.
-material-bruto/rascunhos-locais/
 
 # Capturas geradas novamente pelas ferramentas da Beta 4.
 visual_qa_beta4/*

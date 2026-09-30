@@ -1,127 +1,34 @@
-# Projeto Soldados vs Zumbis — jogar e consultar as versões
+# Soldados vs Zumbis — Beta 4
 
-## Jogar a Beta 4
+Este repositório abre diretamente na versão jogável atual. É um jogo de defesa por faixas: escolha tropas, administre suprimentos e detenha os infectados em Nova York, no Deserto e na Cachoeira de Minas Gerais. Cada mapa tem oito cartas e uma campanha de 12 ondas (duas comuns, uma de subchefe e uma de chefe, por ciclo).
 
-Na página principal, abra a pasta **[Soldados vs Zumbis Beta 4](Soldados%20vs%20Zumbis%20Beta%204/)**. Ela contém o executável Windows, o `main.py`, as imagens, os sons e um README próprio.
+## Jogar no Windows 10/11
 
-No Windows 10/11, use **Code → Download ZIP**, extraia o ZIP inteiro e abra `Soldados vs Zumbis Beta 4/JOGAR_AGORA_WINDOWS.exe`. Não é necessário instalar Python. **Não tente executar de dentro do ZIP nem mova somente o `.exe`**: as artes devem permanecer ao lado dele na mesma pasta. O executável foi testado no Windows 11; Windows 10 ainda precisa de confirmação em outro computador.
+1. No botão verde **Code**, escolha **Download ZIP**.
+2. Aguarde o download completo e **extraia o ZIP inteiro** pelo Explorador do Windows, 7-Zip ou WinRAR. O pacote é grande porque já contém as imagens e os sons; não há outro download de recursos.
+3. Abra a pasta extraída e dê dois cliques em **`JOGAR_AGORA_WINDOWS.exe`**, que está nesta mesma pasta do README. Não precisa instalar Python.
 
-O ZIP automático continua grande porque inclui as imagens da Beta 4, mas não baixa mais todas as artes históricas do Git LFS. Se o download automático não terminar na sua conexão, use o [pacote separado da Beta 4 nos Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-beta-4-jogar.zip); esse pacote antigo ainda exige Python, até a versão Windows completa ser publicada lá.
+Não execute o jogo de dentro do ZIP e não mova o `.exe` sozinho: as pastas de arte e áudio precisam ficar ao lado dele. O executável não é assinado digitalmente; se o Windows pedir confirmação, confira que o arquivo veio deste repositório. Ele foi testado no Windows 11; o Windows 10 ainda precisa de teste em outra máquina.
 
-### macOS e Linux
+## Jogar pelo código no macOS ou Linux
 
-Não há executável nativo pronto nesses sistemas. Instale Python 3.12 ou mais recente, entre na pasta `Soldados vs Zumbis Beta 4`, instale as bibliotecas de `requirements.txt` e rode `python3 main.py`, como explicado no README daquela pasta. O código é multiplataforma, mas a execução gráfica ainda precisa ser testada nesses sistemas.
+Não há executável nativo pronto para esses sistemas. Com Python 3.12 ou mais recente instalado, abra o terminal **na pasta extraída**, ao lado de `main.py`, e rode:
 
-Para comparar as versões antigas e consultar as Alfas, use as pastas `alphas/` e `betas/` ou a [página de versões e downloads](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30).
-
-Este repositório guarda o jogo **e a evolução dele**, sem espalhar código,
-sprites, prompts e relatórios pela página inicial. Para comparar versões
-antigas, entre em [`betas/`](betas/) e escolha uma versão. Se quer entender o que foi
-corrigido entre elas, consulte [`alphas/`](alphas/). Os textos de planejamento
-e registros antigos estão separados em [`material-bruto/`](material-bruto/).
-
-## O que é o jogo atual?
-
-*Soldados vs Zumbis* é um jogo de defesa por faixas feito em Python/Pygame.
-Você posiciona tropas, gasta suprimentos e impede que os infectados cruzem o
-mapa. A **Beta 4** é a versão de trabalho mais recente: tem os cenários de
-Nova York (polícia), Egito (militares) e Cachoeira em Minas Gerais (Marinha),
-com quatro faixas e oito cartas próprias em cada mapa. Cada campanha tem
-12 ondas: duas comuns, uma de subchefe e uma de chefe, repetidas três vezes.
-As versões antigas podem ter **15 ondas, cartas e regras diferentes**. Não
-copie o `main.py` de uma pasta para outra esperando que as artes coincidam.
-
-## Onde está cada coisa?
-
-```text
-Soldados vs Zumbis Beta 4/   jogo atual, arte, som, codigo e executavel Windows
-alphas/           cinco etapas de criação de sprites e revisão
-betas/            Beta 1 documentada; Betas 2, 3 e 4 executáveis
-material-bruto/   textos originais, propostas e explicação do que eles são
-README.md         este guia
+```bash
+python3 -m pip install -r requirements.txt
+python3 main.py
 ```
 
-Cada versão **preservada** tem seu próprio `README.md`, `requirements.txt`,
-`main.py` e `executar.bat`. Também tem `NOTAS_DA_VERSAO.md`, que resume as
-mudanças encontradas nos arquivos **daquela** versão. A Beta 1 é a única
-exceção: seu código original não foi localizado e não há executável na
-pasta. As pastas jogáveis são independentes:
-uma Beta não busca imagens ou código dentro de outra Beta ou de uma Alfa.
-As versões históricas usam Git LFS para parte da arte e do áudio; a pasta
-principal da Beta 4 inclui seus recursos diretamente para funcionar no ZIP
-automático do GitHub.
+As mesmas instruções servem para quem prefere rodar o código no Windows, substituindo `python3` por `py` quando necessário. macOS e Linux ainda precisam de teste gráfico em computadores reais; o código e os recursos estão no ZIP, mas não prometemos execução com um clique nessas plataformas.
 
-## Arquivos e versões anteriores
+## O que vem no ZIP
 
-O **Code → Download ZIP** inclui as artes reais da pasta principal da Beta 4.
-As Alfas e Betas antigas ainda guardam parte das artes no Git LFS; para
-executá-las, baixe o [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-pacote-jogavel.zip), instale Python e abra o `executar.bat` na pasta da versão desejada. O pacote histórico
-e os textos brutos continuam disponíveis nos Releases. A Beta 1 original não
-foi localizada; sua pasta é apenas documental.
+`main.py` e os demais `.py` são o jogo; `assets/`, `CENARIOS_BETA4_CONCEITOS/`, `PIXEL_ART_SPRITES_BETA4/` e `PROTOTIPO_CARTA_CAMPO/` guardam os recursos que ele usa. `requirements.txt` lista as bibliotecas para rodar pelo código. O jogo usa CPU e memória como caminho padrão, sem exigir placa de vídeo dedicada.
 
-## Como abrir uma Beta
+O botão **Code → Download ZIP** entrega **somente a Beta 4 atual**, pronta para abrir no Windows após extrair. Ele não mistura outras Alfas/Betas nem pede para localizar arquivos em outra pasta.
 
-1. Instale Python 3.12 ou mais recente e extraia o ZIP completo. Se preferir
-   clonar o repositório como desenvolvedor, instale Git LFS e execute
-   `git lfs pull` depois do clone para baixar a arte e o áudio completos.
-2. Abra `betas/beta-2/`, `beta-3/` ou `beta-4/`. A Beta 1 original não está
-   disponível para execução porque seu arquivo não foi localizado.
-3. No Windows, dê dois cliques no **`executar.bat` dentro da pasta escolhida**.
-   Não use um lançador de outra versão.
+## Versões anteriores e colaboração
 
-Se preferir o terminal, entre na pasta da Beta e rode:
+As versões de referência, Alfas de correção, Betas anteriores e textos de desenvolvimento estão nos [Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases), separados do download principal. O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30) é para consulta e pode exigir Python. A Beta 1 original, feita com desenhos simples, não foi localizada; não apresentamos uma recriação como se fosse o arquivo autêntico.
 
-```powershell
-python -m pip install -r requirements.txt
-python main.py
-```
-
-A Beta 4 usa renderização por CPU/RAM como padrão; uma placa de vídeo
-dedicada não é exigida. O áudio e os controles de teclado podem ser ajustados
-no menu do jogo. Para as regras e comandos próprios da versão atual, leia
-[`betas/beta-4/README.md`](betas/beta-4/README.md).
-
-## Por que há Alfas e Betas separadas?
-
-Esta classificação foi corrigida conforme a identificação feita pelo autor
-em 30/09/2026. **Beta** é o marco de conteúdo aprovado; **Alfa** é a etapa de
-criação ou correção ligada à respectiva Beta. Os números internos `v6`, `v7.4`
-e `v7.5` identificam pacotes técnicos e não determinam o nome histórico da
-Beta. A primeira Beta tinha personagens e faixas desenhados com formas
-simples, sem sprites; seu arquivo original não está neste acervo. Não foi
-substituído por uma recriação apresentada como autêntica.
-
-| Etapa identificada | Arquivo preservado | Papel no acervo |
-|---|---|---|
-| [Beta 1](betas/beta-1/) | Original não localizado | Primeiro jogo de desenhos simples descrito pelo autor. A pasta contém apenas esta informação, sem código inventado. |
-| [Alfa inicial](alphas/alfa-inicial/) | Executável | Início do trabalho com sprites após a Beta 1. É a primeira base com arte preservada, não o primeiro jogo. |
-| [Beta 2](betas/beta-2/) | Executável | Antiga pasta chamada “Beta 1”: abertura, carregamento de recursos e consulta de personagens no menu. |
-| [Alfa da Beta 2](alphas/alfa-beta-2/) | Executável | Revisão v7.1 das arenas e da estabilidade dos efeitos. |
-| [Alfa da Beta 3 — v7.4](alphas/alfa-beta-3-v7-4/) | Executável | Antiga pasta chamada “Beta 2”: evolução N1/N2, Sargento, contenções e interface. Classificada pelo autor como Alfa de correção da Beta 3. |
-| [Alfa da Beta 3 — v7.5](alphas/alfa-beta-3-v7-5/) | Executável | Minas isoladas e redução de dificuldade excessiva. |
-| [Beta 3](betas/beta-3/) | Executável | Recursos regionais e modos de dificuldade. |
-| [Alfa da Beta 4](alphas/alfa-beta-4/) | Executável | Revisão de animações, controles, áudio e balanceamento antes da Beta 4. |
-| [Beta 4](betas/beta-4/) | Executável | Campanha de 12 ondas, quatro faixas, oito cartas por mapa, áudio e animações integradas. |
-
-Para detalhes de uma etapa, abra **`NOTAS_DA_VERSAO.md` na própria pasta**.
-As Alfas também mantêm código executável para comparação, mas não são a
-linha em que a equipe deve desenvolver novas funções.
-
-## O que é “material bruto”?
-
-[`material-bruto/`](material-bruto/) guarda os textos originais de elenco,
-história, prompts de arte, relatórios de revisão, planejamento e dúvidas.
-Eles explicam como o projeto chegou aqui; **não são uma segunda lista de
-requisitos atuais**. Alguns falam em cartas descartadas, seleção de três
-cartas, 15 ondas ou números de suprimentos antigos. A explicação por tipo
-de documento e as perguntas ainda abertas estão no README daquela pasta.
-
-## Situação da entrega
-
-Em 30/09/2026, `betas/beta-4/` passou em **122 testes automatizados** e na
-checagem de inicialização numa cópia limpa do repositório. As outras sete
-pastas executáveis também passaram em suas checagens básicas de inicialização. Isso
-confirma que o pacote carrega; **não comprova** que todas as ondas são
-vencíveis nem que cada animação foi aprovada visualmente. Os pontos de
-revisão para a equipe estão em
-[`material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md`](material-bruto/textos/PENDENCIAS_PARA_EQUIPE.md).
+A Beta 4 é a base para a equipe continuar o projeto. As Alfas registram correções entre marcos de conteúdo, enquanto as Betas marcam as versões ampliadas. Ainda há espaço para refinar arte, som e balanceamento com testes dos colegas e do professor; apontem o mapa, a onda, a unidade e, se possível, uma captura quando acharem um defeito.
