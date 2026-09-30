@@ -5,22 +5,26 @@ project_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 game_dir="$project_dir/betas/beta-4"
 environment_dir="$project_dir/.venv-beta4"
 
-if ! command -v python3 >/dev/null 2>&1; then
+python_cmd=""
+for candidate in python3.14 python3.13 python3.12 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+        "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+        python_cmd="$candidate"
+        break
+    fi
+done
+if [ -z "$python_cmd" ]; then
     echo "Python 3.12 ou mais recente nao foi encontrado. Instale-o e tente novamente." >&2
     exit 1
 fi
 
-if ! python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 12))'; then
-    echo "Este pacote precisa de Python 3.12 ou mais recente." >&2
-    exit 1
-fi
-
 cd "$project_dir"
-python3 verificar_recursos.py "$game_dir"
+"$python_cmd" verificar_recursos.py "$game_dir"
 
-if [ ! -x "$environment_dir/bin/python" ]; then
+if [ ! -x "$environment_dir/bin/python" ] ||
+    ! "$environment_dir/bin/python" -m pip --version >/dev/null 2>&1; then
     echo "Preparando o ambiente da Beta 4 (somente na primeira abertura)..."
-    if ! python3 -m venv "$environment_dir"; then
+    if ! "$python_cmd" -m venv "$environment_dir"; then
         echo "Nao foi possivel criar o ambiente Python. No Linux, verifique se python3-venv esta instalado." >&2
         exit 1
     fi
