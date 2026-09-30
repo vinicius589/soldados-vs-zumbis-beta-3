@@ -1,4 +1,4 @@
-# Alfa após Beta 3 — snapshot de revisão pré-entrega
+# Alfa da Beta 4 — snapshot de revisão pré-entrega
 
 O diretório de origem chamava-se `Soldados_vs_Zumbis_Beta4-Revisao-Final-2026-09-22`.
 Foi preservado aqui como **referência anterior ao fechamento da Beta 4**, não

@@ -1,1271 +1,339 @@
-"""Soldados vs Zumbis — Reconstrução v7.
+"""Soldados vs Zumbis — an original Pygame tower-defense campaign.
 
-Um tower defense original em Pygame. Esta versão usa somente as artes v7
-carregadas durante a tela de abertura e implementa campanha, cartas, munição,
-suporte externo, chefes, Núcleos de Ascensão e elencos temáticos por região.
+No third-party game graphics or audio are used.  The PNG sprites and the menu
+illustration in assets/ belong to this project and are loaded at runtime.
 """
-
 from __future__ import annotations
 
 import json
 import math
 import os
 import random
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable
+from typing import Any
 
 import pygame
 
 
-ROOT = Path(__file__).resolve().parent
-ASSET_DIR = ROOT / "assets" / "v7"
-SAVE_PATH = ROOT / "campanha_v7.json"
 WIDTH, HEIGHT = 1280, 720
 FPS = 60
-VERSION = "7.4"
-ROWS, COLS = 5, 9
-BOARD = pygame.Rect(164, 288, 1090, 382)
-CELL_W = BOARD.width / COLS
-CELL_H = BOARD.height / ROWS
-WHITE = (242, 244, 239)
-INK = (15, 20, 25)
-GOLD = (240, 187, 72)
-RED = (218, 68, 57)
-TEAL = (72, 198, 192)
-GRAY = (148, 160, 166)
+BOARD_X, BOARD_Y = 228, 176
+COLS, ROWS, CELL_W, CELL_H = 9, 5, 108, 90
+BOARD_W, BOARD_H = COLS * CELL_W, ROWS * CELL_H
+ROOT = os.path.dirname(os.path.abspath(__file__))
+ASSET_DIR = os.path.join(ROOT, "assets")
+SAVE_FILE = os.path.join(ROOT, "campaign_progress.json")
 
+# The first wave must teach the player instead of punishing them.  Economy and
+# card limits then prevent a late-game row of identical power units from
+# trivialising the horde.
+STARTING_SUPPLIES = (165, 175, 185)
+PICKUP_VALUES = (8, 12, 16)
+PICKUP_INTERVAL = (12.0, 16.0)
+# Each support specialist carries its own income profile.  The inexpensive
+# option is deliberately useful instead of making the basic radio feel like a
+# luxury card, while the high-output command centre has a real strategic cost.
+RADIO_SUPPLIES = 7
+RADIO_INTERVAL = 6.0
 
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
-
-
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
-
-
-def enemy_wave_scale(wave: int) -> float:
-    """Mantém as primeiras ondas acolhedoras e endurece a reta final.
-
-    A versão anterior começava com vida cheia e liberava ameaças depressa;
-    assim, o primeiro contato parecia mais duro que a metade da campanha.
-    """
-    return 0.72 + max(0, wave - 1) * 0.10
-
-
-def enemy_damage_scale(wave: int) -> float:
-    """Escala separada para que o fim não seja só uma esponja de vida."""
-    return 0.78 + wave * 0.07
-
-
-def boss_wave_scale(wave: int) -> float:
-    """Chefes escalam com a campanha sem virar paredes de vida.
-
-    Um chefe deve mudar a montagem da linha, não exigir uma composição
-    perfeita ou prender o jogador numa sequência infinita de atordoamentos.
-    Por isso sua vida cresce mais devagar que a de uma horda comum.
-    """
-    return 0.82 + max(0, wave - 1) * 0.045
-
-
-def boss_damage_scale(wave: int) -> float:
-    """Contém o dano físico dos chefes nas ondas altas."""
-    return 0.70 + wave * 0.035
-
-
-def terrain_y(region: str, row: int, x: float) -> float:
-    """Posiciona os pés nas superfícies pintadas de cada cenário.
-
-    Os três fundos atuais foram alinhados como campos táticos quase
-    ortogonais, então as faixas permanecem horizontais. Isso evita inimigos
-    caminhando sobre céu, construções, paredões ou horizonte.
-    """
-    y = BOARD.top + (row + 0.5) * CELL_H
-    return min(HEIGHT - 26, y)
-
-
-def cell_center(row: int, col: int, region: str = "city") -> tuple[float, float]:
-    x = BOARD.left + (col + 0.5) * CELL_W
-    return x, terrain_y(region, row, x)
-
-
-def cell_rect(row: int, col: int) -> pygame.Rect:
-    return pygame.Rect(
-        int(BOARD.left + col * CELL_W),
-        int(BOARD.top + row * CELL_H),
-        int(CELL_W),
-        int(CELL_H),
-    )
-
-
-def title_case(value: str) -> str:
-    return value.replace("_", " ").title()
-
-
-REGIONS = {
-    "city": {
-        "name": "Cidade Quarentenada",
-        "short": "CIDADE",
-        "tag": "Tóxico urbano",
-        "bg": "city_grounded.png",
-        "soldiers": "city_soldiers_atlas.png",
-        "soldiers_l2": "city_soldiers_l2_atlas_v74.png",
-        "zombies": "city_zombies_atlas.png",
-        "accent": (90, 207, 166),
-        "unlock_after": None,
-        "description": "Asfalto verdadeiro, prédios em ruína e uma névoa ácida que alimenta os infectados.",
-        "bosses": ("bruto_demolidor", "comandante_mortos", "cuspidor_alfa"),
-    },
-    "desert": {
-        "name": "Deserto das Ruínas",
-        "short": "DESERTO",
-        "tag": "Magia e escavação",
-        "bg": "desert.png",
-        "soldiers": "desert_soldiers_atlas.png",
-        "soldiers_l2": "desert_soldiers_l2_atlas_v74.png",
-        "zombies": "desert_zombies_atlas.png",
-        "accent": (235, 179, 76),
-        "unlock_after": "city",
-        "description": "Uma estrada de terra leva às pirâmides; escavadores e magia antiga quebram a formação.",
-        "bosses": ("mutante_ruinas", "necromante", "colosso_mutante"),
-    },
-    "beach": {
-        "name": "Praia de Maré Morta",
-        "short": "PRAIA",
-        "tag": "Maré e costa",
-        "bg": "beach_banded_v72.png",
-        "soldiers": "beach_soldiers_atlas.png",
-        "soldiers_l2": "beach_soldiers_l2_atlas_v74.png",
-        "zombies": "beach_zombies_atlas.png",
-        "accent": (78, 177, 232),
-        "unlock_after": "desert",
-        "description": "Duas faixas de areia, um canal central e mais duas faixas de areia formam uma defesa costeira legível.",
-        "bosses": ("tide_brute", "cacador_abissal", "leviata"),
-    },
+# Every environment exposes a curated tactical roster.  All units remain in
+# the project, but a city commander is not offered a submarine and a beach
+# operation has its own coastal equipment.  The three new cards below are
+# mechanics, not generic bonuses: Recruta earns ranks from boss medals,
+# Instrutor converts medals into those ranks, and Vanguardista holds a lane.
+UNIT_DATA: dict[str, dict[str, Any]] = {
+    "fuzileiro": dict(label="Fuzileiro", cost=50, hp=135, damage=20, rate=.82, color=(112, 181, 87), kind="rifle", ability="Rifle de linha"),
+    "tenente": dict(label="Tenente", cost=100, hp=180, damage=34, rate=.76, color=(90, 170, 199), kind="rifle", ability="Tiro de comando"),
+    "general": dict(label="General", cost=260, hp=265, damage=66, rate=.72, color=(212, 145, 55), kind="rifle", max_total=1, cooldown=5.2, ability="Aura de comando"),
+    "bombardeiro": dict(label="Bombardeiro", cost=215, hp=150, damage=115, rate=3.4, color=(203, 82, 57), kind="splash", splash=82, max_per_row=1, max_total=3, cooldown=5.4, ability="Explosão em área"),
+    "sniper": dict(label="Sniper", cost=205, hp=115, damage=165, rate=2.5, color=(120, 141, 185), kind="rifle", pierce=1, max_total=3, cooldown=3.9, ability="Tiro perfurante"),
+    "morteiro": dict(label="Morteiro", cost=230, hp=190, damage=120, rate=2.5, color=(135, 119, 75), kind="mortar", splash=110, max_total=3, cooldown=5.0, ability="Arco explosivo"),
+    "rambo": dict(label="Rambo", cost=270, hp=325, damage=44, rate=.38, color=(178, 76, 65), kind="rifle", pierce=2, max_total=1, cooldown=4.8, ability="Rajada perfurante"),
+    "forcas_especiais": dict(label="Forças Especiais", cost=145, hp=225, damage=46, rate=.65, color=(84, 113, 104), kind="rifle", ability="Fogo de elite"),
+    "engenheiro": dict(label="Engenheiro", cost=120, hp=440, damage=0, rate=3.6, color=(209, 164, 57), kind="engineer", repair=42, cooldown=3.8, ability="Reparo de campo"),
+    "lanca_chamas": dict(label="Lança-Chamas", cost=165, hp=220, damage=20, rate=.25, color=(238, 110, 49), kind="flame", range=185, ability="Chamas em cone"),
+    "escopeteiro": dict(label="Escopeteiro", cost=135, hp=170, damage=58, rate=1.05, color=(177, 143, 71), kind="shotgun", range=305, ability="Disparo múltiplo"),
+    "batedor_suprimentos": dict(label="Batedor de Suprimentos", cost=45, hp=96, damage=0, rate=4.0, income=3, color=(173, 191, 93), kind="radio", max_total=3, cooldown=3.2, tier=1, ability="+3 SUP / 4 s"),
+    "operador_radio": dict(label="Operador de Rádio", cost=85, hp=138, damage=0, rate=RADIO_INTERVAL, income=RADIO_SUPPLIES, color=(205, 164, 55), kind="radio", max_total=2, cooldown=4.2, tier=2, ability="+7 SUP / 6 s"),
+    "torre_radio": dict(label="Torre de Rádio", cost=150, hp=230, damage=0, rate=5.0, income=15, color=(204, 139, 59), kind="radio", max_total=1, cooldown=6.0, tier=3, ability="+15 SUP / 5 s"),
+    "central_comando": dict(label="Central de Comando", cost=295, hp=330, damage=0, rate=3.8, income=26, color=(227, 104, 51), kind="radio", max_total=1, cooldown=7.4, tier=4, ability="+26 SUP / 3,8 s"),
+    "operador_drone": dict(label="Operador de Drone", cost=180, hp=130, damage=34, rate=.65, color=(104, 182, 191), kind="drone", ability="Alvo global"),
+    "buggy": dict(label="Buggy", cost=230, hp=410, damage=62, rate=.58, color=(130, 161, 88), kind="rifle", max_total=2, cooldown=4.2, ability="Canhão móvel"),
+    "lancha_patrulha": dict(label="Lancha Patrulha", cost=185, hp=350, damage=41, rate=.58, color=(85, 155, 178), kind="rifle", aquatic=True, max_total=3, cooldown=4.0, ability="Patrulha costeira"),
+    "submarino": dict(label="Submarino", cost=245, hp=430, damage=116, rate=1.8, color=(85, 162, 177), kind="splash", splash=78, aquatic=True, max_total=2, cooldown=5.2, ability="Torpedo em área"),
+    "bomba_agua": dict(label="Bomba de Água", cost=150, hp=1, damage=390, rate=0, color=(78, 167, 192), kind="mine", aquatic=True, max_per_row=1, ability="Mina de maré"),
+    "mina": dict(label="Mina Tática", cost=90, hp=1, damage=310, rate=0, color=(98, 124, 81), kind="mine", max_per_row=1, ability="Emboscada terrestre"),
+    "ferramenta_medica": dict(label="Ferramenta Médica", cost=65, hp=0, damage=0, rate=3.8, color=(232, 72, 68), kind="medical", tool=True, ability="Cura 180 HP"),
+    "recruta": dict(label="Recruta de Campo", cost=35, hp=92, damage=15, rate=1.82, range=222, color=(165, 186, 118), kind="rifle", evolvable=True, max_rank=3, ability="Tiro curto • evolui com Medalhas"),
+    "instrutor_tatico": dict(label="Instrutor Tático", cost=125, hp=210, damage=0, rate=4.8, color=(177, 153, 83), kind="trainer", max_total=1, cooldown=5.0, ability="Promove aliado com Medalha"),
+    "vanguardista": dict(label="Vanguardista", cost=175, hp=1050, damage=8, rate=1.55, range=150, color=(111, 122, 126), kind="vanguard", max_total=2, cooldown=5.2, ability="Blindagem de linha • dano mínimo"),
+    "torreta_engenheiro": dict(label="Torreta de Engenheiro", cost=0, hp=190, damage=23, rate=.58, range=410, color=(118, 139, 88), kind="turret", hidden=True, cooldown=0, ability="Torreta automática destacável"),
 }
 
+# The logistics variants deliberately reuse the original Radio Operator
+# silhouette.  At runtime they receive distinct colour, rank and environment
+# treatments, so a missing duplicate PNG can never create a placeholder card.
+UNIT_ASSET_KEYS = {
+    "batedor_suprimentos": "operador_radio",
+    "torre_radio": "operador_radio",
+    "central_comando": "operador_radio",
+    "instrutor_tatico": "instrutor_tatico_v2",
+    "vanguardista": "vanguardista_v2",
+    "torreta_engenheiro": "torreta_engenheiro_v2",
+    # Recruta is replaced by a full, original regional uniform at runtime.
+    "recruta": "recruta_city_v2",
+}
 
-# Cada carta possui Nível 1 ou Nível 2. O terceiro nível é temporário e só
-# existe quando um Núcleo de Ascensão, recebido ao derrotar um chefe, é usado.
-DEFENSES = {
+ENVIRONMENT_STYLE = {
+    "city": dict(
+        uniform="DESTACAMENTO URBANO • CONCRETO, COURO E AÇO",
+        callout="Cobertura entre carros e barricadas",
+    ),
+    "desert": dict(
+        uniform="DESTACAMENTO DO DESERTO • LONA, AREIA E ÓCULOS",
+        callout="Disciplina de comboio e poeira",
+    ),
+    "beach": dict(
+        uniform="DESTACAMENTO COSTEIRO • COLETE NAVAL E SAL",
+        callout="Patrulha entre areia, píer e maré",
+    ),
+}
+
+ZOMBIE_DATA: dict[str, dict[str, Any]] = {
+    "caminhante": dict(label="Caminhante Urbano", hp=105, speed=15, damage=20, color=(112, 154, 139), motion="shamble"),
+    "corredor": dict(label="Corredor de Rua", hp=82, speed=29, damage=17, color=(128, 151, 112), motion="sprint"),
+    "bruto": dict(label="Bruto", hp=720, speed=9, damage=40, color=(111, 135, 99), boss=True, motion="stomp"),
+    "rastejante": dict(label="Rastejante", hp=55, speed=23, damage=14, color=(103, 152, 136), motion="crawl"),
+    "toxico": dict(label="Tóxico do Oásis", hp=140, speed=16, damage=23, color=(149, 199, 71), motion="shamble"),
+    "blindado": dict(label="Blindado Costeiro", hp=390, speed=11, damage=29, color=(103, 126, 128), armor=.35, motion="stomp"),
+    "divisor": dict(label="Divisor das Dunas", hp=185, speed=14, damage=22, color=(160, 98, 75), split=True, motion="shamble"),
+    "feral": dict(label="Feral do Deserto", hp=175, speed=25, damage=33, color=(117, 140, 100), motion="sprint"),
+    "gritador": dict(label="Gritador de Rua", hp=130, speed=14, damage=20, color=(124, 103, 109), howl=True, motion="shamble"),
+    "cuspidor": dict(label="Cuspidor", hp=135, speed=13, damage=19, color=(155, 196, 78), ranged=True, range=340, motion="shamble"),
+    "pulador": dict(label="Pulador de Ruínas", hp=115, speed=21, damage=24, color=(154, 107, 68), jump=True, motion="leap"),
+    "necromante": dict(label="Necromante das Areias", hp=255, speed=10, damage=25, color=(89, 72, 110), healer=True, motion="shamble"),
+    "sandstalker": dict(label="Sandstalker", hp=145, speed=27, damage=26, color=(189, 146, 83), dig=True, motion="sprint"),
+    "nadador": dict(label="Nadador da Maré", hp=115, speed=21, damage=20, color=(64, 154, 187), aquatic=True, motion="swim"),
+    "tide_brute": dict(label="Tide Brute", hp=830, speed=10, damage=45, color=(80, 141, 133), aquatic=True, boss=True, motion="swim"),
+    "conehead": dict(label="Conehead de Obras", hp=270, speed=13, damage=24, color=(227, 128, 48), armor=.18, motion="shamble"),
+    "bandeireiro": dict(label="Bandeireiro", hp=150, speed=21, damage=19, color=(160, 64, 64), flag=True, motion="shamble"),
+    "porta_escudo": dict(label="Porta-Escudo", hp=450, speed=10, damage=25, color=(94, 111, 117), armor=.25, motion="stomp"),
+    "escavadeira": dict(label="Escavadeira das Ruínas", hp=210, speed=17, damage=30, color=(151, 119, 83), dig=True, motion="stomp"),
+    "doutor_zumbi": dict(label="Doutor da Praia", hp=260, speed=12, damage=20, color=(204, 204, 185), healer=True, motion="shamble"),
+    "general_morto": dict(label="General Morto", hp=1160, speed=9, damage=53, color=(58, 103, 92), boss=True, motion="stomp"),
+    "mutante_titan": dict(label="Mutante Titã", hp=1500, speed=7, damage=65, color=(143, 191, 76), boss=True, motion="stomp"),
+}
+
+# These are direct regional illustrations, not colour overlays.  Every other
+# card keeps its own original silhouette while the recruit and walker visibly
+# change uniform/clothing with their battlefield.
+REGIONAL_UNIT_ASSETS = {
     "recruta": {
-        "base": "Recruta",
-        "role": "rifle",
-        "level": 1,
-        "cost": 45,
-        "hp": 92,
-        "damage": 11,
-        "range": 2,
-        "cooldown": 1.05,
-        "ammo": 10,
-        "sprite": 0,
-        "ability": "Pistola: tiro cadenciado em até 2 blocos. Dez tiros derrubam um Caminhante.",
-    },
-    "soldado": {
-        "base": "Soldado",
-        "role": "rifle",
-        "level": 2,
-        "cost": 95,
-        "hp": 128,
-        "damage": 20,
-        "range": 4,
-        "cooldown": 0.60,
-        "ammo": 18,
-        "sprite": 1,
-        "ability": "M16: quatro blocos de alcance e fogo sustentado; depende de munição externa.",
-    },
-    "escopeteiro": {
-        "base": "Espingarda de Mão",
-        "role": "shotgun",
-        "level": 1,
-        "cost": 55,
-        "hp": 122,
-        "damage": 38,
-        "range": 1,
-        "cooldown": 1.10,
-        "ammo": 2,
-        "sprite": 3,
-        "ability": "Dois cartuchos e alcance curto. Quanto mais perto, mais pellets acertam.",
-    },
-    "escopeteiro_regular": {
-        "base": "Escopeteiro Regular",
-        "role": "shotgun",
-        "level": 2,
-        "cost": 105,
-        "hp": 150,
-        "damage": 52,
-        "range": 3,
-        "cooldown": 0.95,
-        "ammo": 5,
-        "sprite": 3,
-        "ability": "Espingarda regular de três blocos; segura os corredores antes da linha.",
-    },
-    "sniper": {
-        "base": "Atirador de Vigia",
-        "role": "sniper",
-        "level": 1,
-        "cost": 75,
-        "hp": 82,
-        "damage": 58,
-        "range": 9,
-        "cooldown": 2.10,
-        "ammo": 5,
-        "sprite": 4,
-        "ability": "Mira instável: pode errar. Dano alto, sem execução instantânea.",
-    },
-    "sniper_regular": {
-        "base": "Sniper Regular",
-        "role": "sniper",
-        "level": 2,
-        "cost": 135,
-        "hp": 95,
-        "damage": 88,
-        "range": 9,
-        "cooldown": 1.85,
-        "ammo": 6,
-        "sprite": 4,
-        "ability": "Mira garantida e dano alto; ainda não é um hit-kill.",
-    },
-    "bombardeiro": {
-        "base": "Bombardeiro",
-        "role": "grenade",
-        "level": 1,
-        "cost": 100,
-        "hp": 112,
-        "damage": 70,
-        "range": 2,
-        "cooldown": 2.25,
-        "ammo": 3,
-        "sprite": 5,
-        "ability": "Granada curta em área. A explosão pode ferir aliados próximos.",
-    },
-    "granadeiro": {
-        "base": "Granadeiro",
-        "role": "grenade",
-        "level": 2,
-        "cost": 150,
-        "hp": 124,
-        "damage": 88,
-        "range": 4,
-        "cooldown": 1.75,
-        "ammo": 5,
-        "sprite": 5,
-        "ability": "Lançador de granadas de quatro blocos; controla grupos, mas gasta muita munição.",
-    },
-    "morteiro": {
-        "base": "Morteiro de Campo",
-        "role": "mortar",
-        "level": 2,
-        "cost": 165,
-        "hp": 105,
-        "damage": 105,
-        "range": 3,
-        "cooldown": 2.30,
-        "ammo": 4,
-        "sprite": 5,
-        "ability": "Bomba de arco com área ampla. Não mira o primeiro bloco da própria posição.",
-    },
-    "lanca_chamas": {
-        "base": "Lança-Chamas",
-        "role": "flame",
-        "level": 2,
-        "cost": 128,
-        "hp": 144,
-        "damage": 14,
-        "range": 3,
-        "cooldown": 0.35,
-        "ammo": 14,
-        "sprite": 9,
-        "ability": "Cone de fogo até três blocos; aplica queima contínua em quem entra no alcance.",
-    },
-    "lanca_chamas_bolso": {
-        "base": "Lança-Chamas de Mão",
-        "role": "flame",
-        "level": 1,
-        "cost": 78,
-        "hp": 108,
-        "damage": 10,
-        "range": 1,
-        "cooldown": 0.62,
-        "ammo": 8,
-        "sprite": 9,
-        "ability": "Jato curto e lento de um bloco. Barato para segurar a primeira aproximação, mas precisa de recarga.",
-    },
-    "morteiro_basico": {
-        "base": "Morteiro de Uma Bomba",
-        "role": "mortar",
-        "level": 1,
-        "cost": 82,
-        "hp": 88,
-        "damage": 66,
-        "range": 2,
-        "cooldown": 4.35,
-        "ammo": 1,
-        "sprite": 5,
-        "ability": "Lança uma única bomba em área e recarrega muito devagar. É o estágio inicial do morteiro.",
-    },
-    "mecanico": {
-        "base": "Mecânico",
-        "role": "reload",
-        "level": 1,
-        "cost": 65,
-        "hp": 102,
-        "damage": 0,
-        "range": 1,
-        "cooldown": 4.20,
-        "ammo": 0,
-        "sprite": 6,
-        "ability": "Entrega munição às tropas próximas. Não atira e não gera créditos.",
-    },
-    "engenheiro": {
-        "base": "Engenheiro",
-        "role": "reload",
-        "level": 2,
-        "cost": 118,
-        "hp": 122,
-        "damage": 12,
-        "range": 2,
-        "cooldown": 2.90,
-        "ammo": 0,
-        "sprite": 6,
-        "ability": "Recarrega uma área de dois blocos e solta um drone de ataque leve.",
-    },
-    "radio": {
-        "base": "Operador de Rádio",
-        "role": "radio",
-        "level": 1,
-        "cost": 72,
-        "hp": 90,
-        "damage": 0,
-        "range": 0,
-        "cooldown": 7.00,
-        "ammo": 0,
-        "sprite": 7,
-        "ability": "Pede suprimento à base: pouca quantidade e entrega lenta. É barato de manter.",
-    },
-    "torre_radio": {
-        "base": "Torre de Rádio",
-        "role": "radio",
-        "level": 2,
-        "cost": 128,
-        "hp": 118,
-        "damage": 0,
-        "range": 0,
-        "cooldown": 4.80,
-        "ammo": 0,
-        "sprite": 7,
-        "ability": "Sinal reforçado: suprimento e ritmo médios, sem travar a economia no início.",
-    },
-    "medico": {
-        "base": "Ajudante Médico",
-        "role": "medic",
-        "level": 1,
-        "cost": 65,
-        "hp": 94,
-        "damage": 0,
-        "range": 2,
-        "cooldown": 4.30,
-        "ammo": 0,
-        "sprite": 8,
-        "ability": "Remove corrosão, veneno e atordoamento, mas não restaura vida.",
-    },
-    "medico_experiente": {
-        "base": "Médico de Campo",
-        "role": "medic",
-        "level": 2,
-        "cost": 115,
-        "hp": 112,
-        "damage": 0,
-        "range": 2,
-        "cooldown": 3.35,
-        "ammo": 0,
-        "sprite": 8,
-        "ability": "Cura vida dos feridos. O Núcleo a transforma em médica experiente, que também limpa debuffs.",
-    },
-    "barreira": {
-        "base": "Barreira de Contenção",
-        "role": "barrier",
-        "level": 1,
-        "cost": 58,
-        "hp": 360,
-        "damage": 0,
-        "range": 0,
-        "cooldown": 0,
-        "ammo": 0,
-        "sprite": 10,
-        "ability": "Veículo estático com muita vida para atrasar a horda. Não possui armas.",
-    },
-    "barreira_reativa": {
-        "base": "Barreira Reativa",
-        "role": "barrier",
-        "level": 2,
-        "cost": 104,
-        "hp": 470,
-        "damage": 70,
-        "range": 0,
-        "cooldown": 0,
-        "ammo": 0,
-        "sprite": 10,
-        "ability": "Ao ser destruída, explode e atinge inimigos adjacentes. Continua sem arma.",
-    },
-    "mina": {
-        "base": "Mina de Pressão",
-        "role": "mine",
-        "level": 1,
-        "cost": 42,
-        "hp": 1,
-        "damage": 105,
-        "range": 0,
-        "cooldown": 0,
-        "ammo": 0,
-        "sprite": 11,
-        "ability": "Elimina um alvo, mas possui chance de falha. Um Núcleo transforma-a em limpeza de linha.",
-    },
-    "mina_segura": {
-        "base": "Mina Segura",
-        "role": "mine",
-        "level": 2,
-        "cost": 74,
-        "hp": 1,
-        "damage": 150,
-        "range": 0,
-        "cooldown": 0,
-        "ammo": 0,
-        "sprite": 11,
-        "ability": "Disparo garantido contra um único invasor. Reage quando ele pisa na célula.",
-    },
-    "lancha": {
-        "base": "Lancha Patrulha",
-        "role": "boat",
-        "level": 2,
-        "cost": 125,
-        "hp": 275,
-        "damage": 38,
-        "range": 4,
-        "cooldown": 0.70,
-        "ammo": 16,
-        "sprite": 5,
-        "water_only": True,
-        "ability": "Carta aquática selecionável em qualquer fase; só pode ser posicionada nas faixas de água da Praia.",
-    },
-    "submarino": {
-        "base": "Submarino",
-        "role": "sub",
-        "level": 2,
-        "cost": 175,
-        "hp": 235,
-        "damage": 90,
-        "range": 6,
-        "cooldown": 1.80,
-        "ammo": 6,
-        "sprite": 6,
-        "water_only": True,
-        "ability": "Torpedos de grande alcance. Carta aquática: fica indisponível em solo seco.",
-    },
-    "bomba_agua": {
-        "base": "Bomba de Água",
-        "role": "mine",
-        "level": 2,
-        "cost": 80,
-        "hp": 1,
-        "damage": 190,
-        "range": 0,
-        "cooldown": 0,
-        "ammo": 0,
-        "sprite": 11,
-        "water_only": True,
-        "ability": "Mina marítima segura: só pode ficar submersa e explode em pequenos grupos.",
-    },
-    "instrutor": {
-        "base": "Sargento de Promoção",
-        "role": "promoter",
-        "level": 2,
-        "cost": 135,
-        "hp": 120,
-        "damage": 0,
-        "range": 3,
-        "cooldown": 90.0,
-        "ammo": 0,
-        "sprite": 2,
-        "ability": "Depois de 90 s no campo, promove uma defesa N1 próxima para sua versão N2. Promove uma por ciclo e não cria N3.",
+        "city": "recruta_city_v2",
+        "desert": "recruta_desert_v2",
+        "beach": "recruta_beach_v2",
     },
 }
-
-
-# Promoção permanente de campo. As cartas N1 e N2 continuam livres na seleção;
-# o Sargento só economiza uma segunda colocação quando sobrevive ao ciclo inteiro.
-PROMOTIONS = {
-    "recruta": "soldado",
-    "escopeteiro": "escopeteiro_regular",
-    "sniper": "sniper_regular",
-    "bombardeiro": "granadeiro",
-    "morteiro_basico": "morteiro",
-    "lanca_chamas_bolso": "lanca_chamas",
-    "mecanico": "engenheiro",
-    "radio": "torre_radio",
-    "medico": "medico_experiente",
-    "barreira": "barreira_reativa",
-    "mina": "mina_segura",
-}
-
-
-REGION_ROSTERS = {
-    "city": (
-        ("recruta", "Patrulheiro Urbano"),
-        ("soldado", "Fuzileiro de Asfalto"),
-        ("escopeteiro_regular", "Escopeteiro de Brecha"),
-        ("sniper_regular", "Vigia de Telhado"),
-        ("bombardeiro", "Granadeiro de Quarentena"),
-        ("engenheiro", "Engenheiro de Rua"),
-        ("radio", "Operador de Rádio"),
-        ("medico", "Socorrista de Quarentena"),
-        ("lanca_chamas", "Purificador Hazmat"),
-        ("barreira_reativa", "Vanguarda Reativa"),
-        ("mina_segura", "Mina de Sarjeta"),
-        ("lancha", "Lancha Patrulha"),
-        ("submarino", "Submarino de Resgate"),
-        ("escopeteiro", "Espingarda de Mão"),
-        ("sniper", "Vigia Recruta"),
-        ("mecanico", "Mecânico de Rua"),
-        ("lanca_chamas_bolso", "Lança-Chamas de Mão"),
-        ("morteiro_basico", "Morteiro de Uma Bomba"),
-        ("granadeiro", "Lançador de Quarentena"),
-        ("barreira", "Barreira de Rua"),
-        ("mina", "Mina Instável"),
-        ("instrutor", "Sargento de Promoção Urbano"),
-    ),
-    "desert": (
-        ("recruta", "Batedor do Oásis"),
-        ("soldado", "Rifleiro das Dunas"),
-        ("escopeteiro_regular", "Escopeteiro de Caravana"),
-        ("sniper_regular", "Atirador das Dunas"),
-        ("morteiro", "Morteiro de Ruínas"),
-        ("granadeiro", "Granadeiro de Escavação"),
-        ("engenheiro", "Engenheiro de Campo"),
-        ("torre_radio", "Torre de Rádio Solar"),
-        ("medico_experiente", "Médica de Caravana"),
-        ("lanca_chamas", "Lança-Chamas do Oásis"),
-        ("barreira_reativa", "Caminhão de Contenção"),
-        ("mina_segura", "Mina Solar"),
-        ("lancha", "Lancha Patrulha"),
-        ("submarino", "Submarino de Resgate"),
-        ("escopeteiro", "Espingarda de Caravana"),
-        ("sniper", "Vigia das Dunas"),
-        ("bombardeiro", "Bombardeiro do Oásis"),
-        ("morteiro_basico", "Morteiro de Uma Bomba"),
-        ("mecanico", "Mecânico de Caravana"),
-        ("radio", "Operador de Rádio de Campo"),
-        ("barreira", "Barreira de Caravana"),
-        ("instrutor", "Sargento de Promoção das Dunas"),
-    ),
-    "beach": (
-        ("recruta", "Guarda-Costa Recruta"),
-        ("soldado", "Fuzileiro Anfíbio"),
-        ("escopeteiro_regular", "Escopeteiro de Resgate"),
-        ("sniper_regular", "Sniper Costeiro"),
-        ("bombardeiro", "Arpoador Explosivo"),
-        ("engenheiro", "Engenheiro de Píer"),
-        ("torre_radio", "Torre de Sinal Marítimo"),
-        ("medico_experiente", "Médica de Maré"),
-        ("lanca_chamas", "Lança-Chamas Náutico"),
-        ("barreira_reativa", "Boia de Contenção"),
-        ("bomba_agua", "Bomba de Água"),
-        ("lancha", "Lancha Patrulha"),
-        ("submarino", "Submarino Costeiro"),
-        ("escopeteiro", "Espingarda de Resgate"),
-        ("sniper", "Vigia Costeiro"),
-        ("granadeiro", "Granadeiro de Arpão"),
-        ("mecanico", "Mecânico de Píer"),
-        ("radio", "Operador de Rádio Costeiro"),
-        ("medico", "Ajudante de Maré"),
-        ("barreira", "Boia de Contenção Básica"),
-        ("mina", "Mina de Areia"),
-        ("instrutor", "Sargento de Promoção da Guarda-Costa"),
-    ),
-}
-
-
-ENEMIES = {
+REGIONAL_ZOMBIE_ASSETS = {
     "caminhante": {
-        "name": "Caminhante",
-        "hp": 108,
-        "speed": 12,
-        "damage": 12,
-        "attack": 1.2,
-        "sprite": 0,
-        "ability": "Lento, pouca vida e pouco dano. Pressiona apenas pelo número.",
-    },
-    "corredor": {
-        "name": "Corredor",
-        "hp": 94,
-        "speed": 24,
-        "damage": 27,
-        "attack": 0.75,
-        "sprite": 1,
-        "ability": "Dá um arranque inicial; pune linhas sem escopeta, mina ou barreira.",
-        "tags": ("dash",),
-    },
-    "rastejante": {
-        "name": "Rastejante",
-        "hp": 158,
-        "speed": 9,
-        "damage": 29,
-        "attack": 1.05,
-        "sprite": 1,
-        "ability": "Mais lento que o Caminhante, mas morde com força quando alcança uma defesa.",
-    },
-    "conehead": {
-        "name": "Blindado de Cone",
-        "hp": 215,
-        "speed": 11,
-        "damage": 15,
-        "attack": 1.0,
-        "sprite": 2,
-        "ability": "Cone e colete reflexivo absorvem fogo leve. Força foco ou explosão.",
-        "armor": 0.18,
-    },
-    "policial": {
-        "name": "Policial Infectado",
-        "hp": 265,
-        "speed": 10,
-        "damage": 17,
-        "attack": 1.0,
-        "sprite": 3,
-        "ability": "Colete balístico e tiros curtos contra a linha de defesa.",
-        "armor": 0.25,
-        "tags": ("gun",),
-    },
-    "militar": {
-        "name": "Militar Infectado",
-        "hp": 390,
-        "speed": 9,
-        "damage": 25,
-        "attack": 0.9,
-        "sprite": 4,
-        "ability": "Armadura reforçada e arma de fogo. Exige dano concentrado ou corrosão controlada.",
-        "armor": 0.38,
-        "tags": ("gun",),
-    },
-    "escudo": {
-        "name": "Porta-Escudo",
-        "hp": 330,
-        "speed": 8,
-        "damage": 33,
-        "attack": 1.05,
-        "sprite": 5,
-        "ability": "Escudo bloqueia boa parte do fogo frontal; a granada e o lança-chamas ajudam a quebrar a coluna.",
-        "armor": 0.48,
-        "tags": ("shield",),
-    },
-    "cuspidor": {
-        "name": "Cuspidor Ácido",
-        "hp": 178,
-        "speed": 12,
-        "damage": 14,
-        "attack": 1.1,
-        "sprite": 6,
-        "ability": "Cospe até três blocos: corrosão reduz o desempenho e o ácido causa dano contínuo.",
-        "tags": ("acid",),
-    },
-    "divisor": {
-        "name": "Divisor",
-        "hp": 385,
-        "speed": 7,
-        "damage": 34,
-        "attack": 1.05,
-        "sprite": 7,
-        "ability": "Robusto e lento; sua morte explode em área, com dano físico e corrosivo.",
-        "tags": ("acid", "explode_death"),
-    },
-    "gritador": {
-        "name": "Gritador",
-        "hp": 160,
-        "speed": 11,
-        "damage": 14,
-        "attack": 1.1,
-        "sprite": 8,
-        "ability": "Acelera infectados próximos e pode chamar uma pequena horda.",
-        "tags": ("scream",),
-    },
-    "saltador": {
-        "name": "Saltador",
-        "hp": 152,
-        "speed": 16,
-        "damage": 24,
-        "attack": 0.9,
-        "sprite": 9,
-        "ability": "Salta minas, bombas, veículos e a primeira tropa da frente.",
-        "tags": ("jump",),
-    },
-    "bruto": {
-        "name": "Bruto de Demolição",
-        "hp": 610,
-        "speed": 7,
-        "damage": 48,
-        "attack": 0.9,
-        "sprite": 10,
-        "ability": "Sub-chefe pesado; seus impactos deixam a linha vulnerável.",
-        "tags": ("stomp",),
-    },
-    "digger": {
-        "name": "Escavador",
-        "hp": 220,
-        "speed": 13,
-        "damage": 42,
-        "attack": 0.88,
-        "sprite": 2,
-        "ability": "Enterra-se e reaparece perto de uma tropa para um golpe surpresa de picareta.",
-        "tags": ("dig",),
-    },
-    "ladrao": {
-        "name": "Ladrão de Suprimentos",
-        "hp": 135,
-        "speed": 14,
-        "damage": 10,
-        "attack": 1.2,
-        "sprite": 3,
-        "ability": "Mago das ruínas: rouba créditos. Clique nele antes que alcance a linha para recuperar a carga.",
-        "tags": ("steal",),
-    },
-    "curandeiro": {
-        "name": "Curandeiro Mortal",
-        "hp": 190,
-        "speed": 10,
-        "damage": 12,
-        "attack": 1.1,
-        "sprite": 4,
-        "ability": "Arremessa poções que curam aliados e pode devolver um derrotado à luta uma vez.",
-        "tags": ("heal",),
-    },
-    "parasita": {
-        "name": "Parasita das Dunas",
-        "hp": 330,
-        "speed": 9,
-        "damage": 30,
-        "attack": 1.0,
-        "sprite": 5,
-        "ability": "Agarra uma tropa, corta seu ataque e atordoa até dois blocos à frente.",
-        "tags": ("parasite",),
-    },
-    "mutante": {
-        "name": "Mutante de Ruínas",
-        "hp": 520,
-        "speed": 7,
-        "damage": 42,
-        "attack": 0.9,
-        "sprite": 6,
-        "ability": "Sub-chefe com hospedeiro armado nas costas e soco que atordoa uma área.",
-        "tags": ("stomp", "gun"),
-    },
-    "necromante_minion": {
-        "name": "Múmia Invocada",
-        "hp": 130,
-        "speed": 15,
-        "damage": 18,
-        "attack": 1.0,
-        "sprite": 7,
-        "ability": "Múmia fraca convocada pelo Necromante; existe para consumir munição e cobertura.",
-    },
-    "boia": {
-        "name": "Turista de Boia",
-        "hp": 135,
-        "speed": 9,
-        "damage": 15,
-        "attack": 1.1,
-        "sprite": 0,
-        "ability": "Lento na água, mas a boia o protege de uma parte do dano.",
-        "armor": 0.12,
-    },
-    "surfista": {
-        "name": "Surfista Infectado",
-        "hp": 122,
-        "speed": 25,
-        "damage": 25,
-        "attack": 0.8,
-        "sprite": 1,
-        "ability": "A prancha cria um dash aquático, obrigando reação rápida nas faixas molhadas.",
-        "tags": ("dash",),
-    },
-    "salva_vidas": {
-        "name": "Salva-Vidas de Escudo",
-        "hp": 285,
-        "speed": 10,
-        "damage": 25,
-        "attack": 1.0,
-        "sprite": 2,
-        "ability": "Boia-escudo reduz o dano frontal e protege a maré atrás dele.",
-        "armor": 0.40,
-        "tags": ("shield",),
-    },
-    "mergulhador": {
-        "name": "Mergulhador Blindado",
-        "hp": 365,
-        "speed": 10,
-        "damage": 33,
-        "attack": 0.92,
-        "sprite": 3,
-        "ability": "Armadura de mergulho espessa; pode atingir embarcações com força.",
-        "armor": 0.30,
-    },
-    "cacador": {
-        "name": "Caçador da Costa",
-        "hp": 218,
-        "speed": 15,
-        "damage": 32,
-        "attack": 0.85,
-        "sprite": 4,
-        "ability": "Persegue a defesa mais próxima com investida de arpão.",
-        "tags": ("jump",),
-    },
-    "cowboy": {
-        "name": "Cowboy da Maré",
-        "hp": 250,
-        "speed": 12,
-        "damage": 18,
-        "attack": 1.0,
-        "sprite": 5,
-        "ability": "Dispara de longe na costa e coloca pressão em médicos e rádio.",
-        "tags": ("gun",),
-    },
-    "sal_cuspidor": {
-        "name": "Cuspidor de Sal",
-        "hp": 182,
-        "speed": 12,
-        "damage": 15,
-        "attack": 1.0,
-        "sprite": 6,
-        "ability": "Sal pressurizado corrói metal e descarrega as armas em contato.",
-        "tags": ("acid",),
-    },
-    "mar_gritador": {
-        "name": "Gritador de Maré",
-        "hp": 175,
-        "speed": 11,
-        "damage": 15,
-        "attack": 1.0,
-        "sprite": 7,
-        "ability": "O grito acelera nadadores e chama reforços vindos da arrebentação.",
-        "tags": ("scream",),
-    },
-    "nadador": {
-        "name": "Nadador",
-        "hp": 205,
-        "speed": 18,
-        "damage": 25,
-        "attack": 0.92,
-        "sprite": 8,
-        "ability": "Movimenta-se bem nas faixas de água e passa por minas terrestres.",
+        "city": "caminhante_city_v2",
+        "desert": "caminhante_desert_v2",
+        "beach": "caminhante_beach_v2",
     },
 }
 
-
-BOSSES = {
-    "bruto_demolidor": {
-        "name": "BRUTO DEMOLIDOR",
-        "hp": 1450,
-        "speed": 6,
-        "damage": 38,
-        "attack": 1.05,
-        "sprite": 10,
-        "ability": "Entrada: paralisa militares por 3 s. Depois, o Martelo fecha só a própria faixa por 1,2 s a cada 18 s.",
-        "type": "bruto_demolidor",
-    },
-    "comandante_mortos": {
-        "name": "COMANDANTE DOS MORTOS",
-        "hp": 1700,
-        "speed": 9,
-        "damage": 31,
-        "attack": 0.88,
-        "sprite": 11,
-        "ability": "Entrada: dá fúria breve à escolta. Depois, dispara rajadas duplas leves e reacelera somente aliados próximos.",
-        "type": "comandante",
-    },
-    "cuspidor_alfa": {
-        "name": "CUSPIDADOR ALFA",
-        "hp": 2200,
-        "speed": 11,
-        "damage": 34,
-        "attack": 0.95,
-        "sprite": 11,
-        "ability": "Entrada: névoa ácida global de 1,2 s. Depois, cospe em um alvo na própria faixa, com corrosão curta.",
-        "type": "alfa",
-    },
-    "mutante_ruinas": {
-        "name": "MUTANTE DAS RUÍNAS",
-        "hp": 1550,
-        "speed": 6,
-        "damage": 40,
-        "attack": 0.98,
-        "sprite": 6,
-        "ability": "Entrada: abalo leve nas faixas vizinhas. Depois, golpeia somente tropas próximas por 1 s de atordoamento.",
-        "type": "mutante",
-    },
-    "necromante": {
-        "name": "NECROMANTE",
-        "hp": 1850,
-        "speed": 7,
-        "damage": 28,
-        "attack": 0.95,
-        "sprite": 10,
-        "ability": "Entrada: invoca uma múmia. Depois, invoca uma por ciclo e cura pouco os aliados próximos.",
-        "type": "necromante",
-    },
-    "colosso_mutante": {
-        "name": "COLOSSO MUTANTE",
-        "hp": 2600,
-        "speed": 4,
-        "damage": 48,
-        "attack": 1.05,
-        "sprite": 11,
-        "ability": "Entrada: tremor global de 1,2 s. Depois, arremessa uma rocha leve contra uma faixa-alvo.",
-        "type": "colosso",
-    },
-    "tide_brute": {
-        "name": "BRUTO DA MARÉ",
-        "hp": 1500,
-        "speed": 6,
-        "damage": 42,
-        "attack": 1.0,
-        "sprite": 9,
-        "ability": "Entrada: uma onda leve abala a faixa de água. Depois, golpeia boias e embarcações apenas perto da maré.",
-        "type": "tide",
-    },
-    "cacador_abissal": {
-        "name": "CAÇADOR ABISSAL",
-        "hp": 1950,
-        "speed": 11,
-        "damage": 32,
-        "attack": 0.95,
-        "sprite": 10,
-        "ability": "Entrada: avança uma distância curta no canal. Depois, mergulha pouco e ataca uma embarcação próxima.",
-        "type": "hunter",
-    },
-    "leviata": {
-        "name": "LEVIATÃ",
-        "hp": 2850,
-        "speed": 5,
-        "damage": 52,
-        "attack": 1.0,
-        "sprite": 11,
-        "ability": "Entrada: uma maré moderada atinge o canal. Depois, lança um jato concentrado numa embarcação da própria faixa.",
-        "type": "leviathan",
-    },
+# Wave-five, ten and fifteen bosses are concrete units with independent health
+# multipliers and a timed power.  Defeating one grants medals for the
+# Instructor card instead of blanket stat increases.
+BOSS_DATA: dict[str, dict[str, Any]] = {
+    "city_demolisher": dict(sprite="bruto", label="Demolidor de Asfalto", hp_mult=3.5, damage_mult=1.10, speed_mult=.90, armor=.10, power="stomp", interval=5.0, medals=1, desc="Pisoteio: dano e atordoamento na linha"),
+    "city_commander": dict(sprite="general_morto", label="Comandante da Horda", hp_mult=2.65, damage_mult=1.14, speed_mult=.86, armor=.14, power="rally", interval=6.2, medals=1, desc="Grito de guerra: acelera a horda"),
+    "city_colossus": dict(sprite="mutante_titan", label="Colosso da Quarentena", hp_mult=2.15, damage_mult=1.20, speed_mult=.78, armor=.18, power="corrosion", interval=5.7, medals=2, desc="Névoa ácida: envenena a linha"),
+    "desert_sandmaw": dict(sprite="sandstalker", label="Mandíbula das Dunas", hp_mult=9.5, damage_mult=1.18, speed_mult=.91, armor=.08, power="sandstorm", interval=5.3, medals=1, desc="Tempestade: atordoa os defensores"),
+    "desert_oracle": dict(sprite="necromante", label="Oráculo Enterrado", hp_mult=7.6, damage_mult=1.12, speed_mult=.84, armor=.12, power="summon", interval=6.2, medals=1, desc="Ritual: convoca lacaios"),
+    "desert_titan": dict(sprite="mutante_titan", label="Titã das Pirâmides", hp_mult=2.75, damage_mult=1.26, speed_mult=.77, armor=.16, power="quake", interval=5.5, medals=2, desc="Abalo sísmico: danifica e atordoa"),
+    "beach_tidebrute": dict(sprite="tide_brute", label="Bruto da Maré Negra", hp_mult=3.6, damage_mult=1.13, speed_mult=.89, armor=.10, power="tidal", interval=5.1, medals=1, desc="Onda de choque: trava a linha"),
+    "beach_captain": dict(sprite="blindado", label="Capitão Afogado", hp_mult=7.3, damage_mult=1.16, speed_mult=.83, armor=.22, power="rally", interval=6.0, medals=1, desc="Chamado náutico: acelera a horda"),
+    "beach_leviathan": dict(sprite="mutante_titan", label="Leviatã da Ressaca", hp_mult=3.15, damage_mult=1.28, speed_mult=.75, armor=.18, power="tidal", interval=4.9, medals=2, desc="Ressaca: atordoa e causa impacto"),
 }
 
+# The HD artwork is intentionally rendered with different silhouettes.  Humans
+# read tall, vehicles read wide, crawlers stay low, and bosses visibly overhang
+# a normal cell.  The gameplay hit model remains deliberately simple.
+UNIT_DRAW_SIZES = {key: (88, 108) for key in UNIT_DATA}
+UNIT_DRAW_SIZES.update({
+    "buggy": (114, 76), "lancha_patrulha": (114, 74), "submarino": (116, 70),
+    "vanguardista": (128, 78), "torreta_engenheiro": (90, 86),
+    "bomba_agua": (78, 78), "mina": (74, 64), "ferramenta_medica": (82, 70),
+})
+ZOMBIE_DRAW_SIZES = {key: (84, 110) for key in ZOMBIE_DATA}
+ZOMBIE_DRAW_SIZES.update({
+    "rastejante": (110, 66), "nadador": (112, 82), "porta_escudo": (104, 126),
+    "bruto": (122, 146), "tide_brute": (126, 151), "general_morto": (130, 156),
+    "mutante_titan": (146, 172),
+})
 
-REGION_ENEMIES = {
-    "city": ("caminhante", "corredor", "rastejante", "conehead", "policial", "militar", "escudo", "cuspidor", "divisor", "gritador", "saltador", "bruto"),
-    "desert": ("caminhante", "rastejante", "conehead", "digger", "ladrao", "curandeiro", "parasita", "mutante", "necromante_minion", "escudo", "cuspidor"),
-    "beach": ("boia", "surfista", "salva_vidas", "mergulhador", "cacador", "cowboy", "sal_cuspidor", "mar_gritador", "nadador", "saltador"),
-}
+MISSIONS = [
+    dict(
+        name="Cidade", code="city", scene="city", title="Operação Quarentena Urbana",
+        desc="Feche a avenida antes que os mortos atravessem o centro da cidade.", water_rows=set(),
+        doctrine="Cobertura urbana: carros abandonados, interdições e fogo de precisão.",
+        pool=["caminhante", "corredor", "conehead", "bandeireiro", "porta_escudo", "cuspidor", "escavadeira", "gritador"],
+        bosses={5: "city_demolisher", 10: "city_commander", 15: "city_colossus"},
+        units=["recruta", "fuzileiro", "tenente", "general", "sniper", "forcas_especiais", "engenheiro", "instrutor_tatico", "vanguardista", "escopeteiro", "batedor_suprimentos", "operador_radio", "torre_radio", "central_comando", "operador_drone", "buggy", "mina", "ferramenta_medica"],
+        unit_names={
+            "recruta": "Recruta da Avenida", "fuzileiro": "Fuzileiro da Avenida", "tenente": "Tenente de Cerco", "general": "General da Quarentena",
+            "sniper": "Sniper de Cobertura", "forcas_especiais": "Equipe Tática Urbana", "engenheiro": "Engenheiro de Barricada",
+            "instrutor_tatico": "Instrutor de Quarentena", "vanguardista": "Vanguardista Urbano",
+            "escopeteiro": "Patrulheiro de Brecha", "batedor_suprimentos": "Coletor de Caixas", "operador_radio": "Operador de Rádio Urbano",
+            "torre_radio": "Torre Repetidora", "central_comando": "Central de Quarentena", "operador_drone": "Drone de Vigilância",
+            "buggy": "Buggy de Interdição", "mina": "Mina de Contenção", "ferramenta_medica": "Socorrista de Rua",
+        },
+        zombie_names={
+            "caminhante": "Transeunte Infectado", "corredor": "Corredor de Rua", "conehead": "Operário do Cone",
+            "bandeireiro": "Bandeireiro da Horda", "porta_escudo": "Choque Corrompido", "cuspidor": "Cuspidor de Asfalto",
+            "escavadeira": "Escavadeira do Metrô", "gritador": "Sirene Humana", "bruto": "Bruto de Demolição", "general_morto": "General Morto",
+            "mutante_titan": "Colosso da Quarentena",
+        },
+        zombie_abilities={
+            "caminhante": "Massa de rua", "corredor": "Arrancada de avenida", "conehead": "Capacete de obra",
+            "bandeireiro": "Reúne a horda", "porta_escudo": "Escudo de choque", "cuspidor": "Lodo corrosivo",
+            "escavadeira": "Passagem subterrânea", "gritador": "Alarme de sirene",
+        },
+    ),
+    dict(
+        name="Deserto", code="desert", scene="desert_v2", title="Operação Areia Escaldante",
+        desc="Mantenha a estrada das pirâmides antes que a tempestade de areia engula o comboio.", water_rows=set(),
+        doctrine="Disciplina das dunas: visão longa, explosivos e blindagem contra a areia.",
+        pool=["caminhante", "feral", "sandstalker", "toxico", "cuspidor", "necromante", "escavadeira", "divisor", "pulador"],
+        bosses={5: "desert_sandmaw", 10: "desert_oracle", 15: "desert_titan"},
+        units=["recruta", "fuzileiro", "tenente", "bombardeiro", "sniper", "morteiro", "rambo", "engenheiro", "instrutor_tatico", "vanguardista", "lanca_chamas", "escopeteiro", "batedor_suprimentos", "operador_radio", "torre_radio", "central_comando", "buggy", "mina", "ferramenta_medica"],
+        unit_names={
+            "recruta": "Batedor Novato", "fuzileiro": "Batedor das Dunas", "tenente": "Tenente do Comboio", "bombardeiro": "Bombardeiro de Areia",
+            "sniper": "Olho da Duna", "morteiro": "Morteiro de Expedição", "rambo": "Veterano do Deserto",
+            "engenheiro": "Mecânico do Comboio", "lanca_chamas": "Purificador de Areia", "escopeteiro": "Vigia da Caravana",
+            "instrutor_tatico": "Instrutor de Expedição", "vanguardista": "Vanguardista do Comboio",
+            "batedor_suprimentos": "Coletor de Cantis", "operador_radio": "Rádio do Comboio", "torre_radio": "Repetidora das Dunas",
+            "central_comando": "Comando da Expedição", "buggy": "Buggy de Escolta", "mina": "Mina de Areia", "ferramenta_medica": "Médico de Expedição",
+        },
+        zombie_names={
+            "caminhante": "Viajante Ressecado", "feral": "Feral da Duna", "sandstalker": "Sandstalker", "toxico": "Tóxico do Oásis",
+            "cuspidor": "Cuspidor de Cacto", "necromante": "Necromante das Areias", "escavadeira": "Escavadeira Sepultada",
+            "divisor": "Divisor das Dunas", "pulador": "Pulador de Ruínas", "bruto": "Bruto de Pedra", "mutante_titan": "Mutante Titã",
+        },
+        zombie_abilities={
+            "caminhante": "Passos arrastados na areia", "feral": "Corrida de tempestade", "sandstalker": "Mergulho na areia", "toxico": "Veneno do oásis",
+            "cuspidor": "Espinho ácido", "necromante": "Ritual de cura", "escavadeira": "Túnel soterrado",
+            "divisor": "Ninhada de areia", "pulador": "Salto entre ruínas",
+        },
+    ),
+    dict(
+        name="Praia", code="beach", scene="beach", title="Operação Costa Sombria",
+        desc="Defenda a faixa de areia e controle a maré antes que a enseada seja tomada.", water_rows={1, 2, 3},
+        doctrine="Tática costeira: fuzileiros navais, maré rasa e interdição do píer.",
+        pool=["nadador", "blindado", "porta_escudo", "cuspidor", "doutor_zumbi", "gritador", "caminhante", "corredor"],
+        bosses={5: "beach_tidebrute", 10: "beach_captain", 15: "beach_leviathan"},
+        units=["recruta", "fuzileiro", "tenente", "engenheiro", "instrutor_tatico", "vanguardista", "escopeteiro", "batedor_suprimentos", "operador_radio", "torre_radio", "central_comando", "operador_drone", "lancha_patrulha", "submarino", "bomba_agua", "mina", "ferramenta_medica"],
+        unit_names={
+            "recruta": "Fuzileiro Novato", "fuzileiro": "Fuzileiro Naval", "tenente": "Tenente Costeiro", "engenheiro": "Engenheiro do Píer",
+            "instrutor_tatico": "Instrutor Naval", "vanguardista": "Vanguardista Costeiro",
+            "escopeteiro": "Guarda da Faixa", "batedor_suprimentos": "Coletor de Boias", "operador_radio": "Rádio Costeiro",
+            "torre_radio": "Farol Repetidor", "central_comando": "Central de Maré", "operador_drone": "Drone de Salvamento",
+            "lancha_patrulha": "Lancha de Patrulha", "submarino": "Submarino de Defesa", "bomba_agua": "Bomba de Maré",
+            "mina": "Mina de Areia", "ferramenta_medica": "Socorrista Naval",
+        },
+        zombie_names={
+            "nadador": "Nadador da Maré", "blindado": "Mergulhador Blindado", "porta_escudo": "Salva-Vidas Corrompido",
+            "cuspidor": "Cuspidor Salino", "doutor_zumbi": "Doutor da Praia", "gritador": "Sereia Morta",
+            "caminhante": "Turista Afogado", "corredor": "Surfista Feral", "tide_brute": "Tide Brute", "mutante_titan": "Titã da Ressaca",
+        },
+        zombie_abilities={
+            "nadador": "Impulso de maré", "blindado": "Traje de mergulho", "porta_escudo": "Prancha-escudo",
+            "cuspidor": "Jato salino", "doutor_zumbi": "Primeiros socorros mortos", "gritador": "Chamado da ressaca",
+            "caminhante": "Areia pesada", "corredor": "Investida de espuma",
+        },
+    ),
+]
 
+# The city road widens toward the camera.  These bounds make the invisible
+# placement cells follow the real avenue perspective instead of floating in a
+# rectangular layer over the image.
+CITY_ROW_BOUNDS = ((230, 1205), (208, 1222), (186, 1239), (164, 1256), (142, 1273))
 
-def make_save() -> dict:
-    # As regiões são escolhas de estilo e desafio, não uma trava de conteúdo.
-    return {"unlocked": list(REGIONS), "completed": [], "best_wave": {}}
-
-
-def load_save() -> dict:
-    try:
-        data = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or "unlocked" not in data:
-            raise ValueError
-        data.setdefault("completed", [])
-        data.setdefault("best_wave", {})
-        # Atualiza saves antigos sem apagar os melhores resultados já gravados.
-        data["unlocked"] = list(REGIONS)
-        return data
-    except (OSError, ValueError, json.JSONDecodeError):
-        return make_save()
-
-
-def save_campaign(data: dict) -> None:
-    try:
-        SAVE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
-
-
-class FontBook:
-    def __init__(self) -> None:
-        self.title = pygame.font.SysFont("arial", 45, bold=True)
-        self.h1 = pygame.font.SysFont("arial", 28, bold=True)
-        self.h2 = pygame.font.SysFont("arial", 20, bold=True)
-        self.body = pygame.font.SysFont("arial", 16)
-        self.small = pygame.font.SysFont("arial", 13)
-        self.tiny = pygame.font.SysFont("arial", 11)
-
-
-class Assets:
-    """Carrega uma única fonte por quadro para manter a abertura leve."""
-
-    def __init__(self) -> None:
-        self.images: dict[str, pygame.Surface] = {}
-        self.unit_sprites: dict[str, list[pygame.Surface]] = {}
-        self.unit_l2_sprites: dict[str, list[pygame.Surface]] = {}
-        self.zombie_sprites: dict[str, list[pygame.Surface]] = {}
-        self.scale_cache: dict[tuple[int, int, int], pygame.Surface] = {}
-        self.jobs: list[tuple[str, Path, str]] = []
-        for region, info in REGIONS.items():
-            self.jobs.extend(
-                [
-                    (f"{region}_bg", ASSET_DIR / info["bg"], "image"),
-                    (f"{region}_units", ASSET_DIR / info["soldiers"], "units"),
-                    (f"{region}_units_l2", ASSET_DIR / info["soldiers_l2"], "units_l2"),
-                    (f"{region}_zombies", ASSET_DIR / info["zombies"], "zombies"),
-                ]
-            )
-        self.jobs.insert(0, ("menu", ASSET_DIR / "menu.png", "image"))
-        # Cada cenário usa sua própria contenção de última linha. Todas são
-        # carregadas antes do menu, sem travar quando uma faixa é invadida.
-        self.jobs[1:1] = [
-            ("lane_bomb_cart", ASSET_DIR / "lane_bomb_cart_v72.png", "sprite"),
-            ("desert_lane_bomb_cart", ASSET_DIR / "desert_lane_bomb_cart_v73.png", "sprite"),
-            ("beach_land_bomb_cart", ASSET_DIR / "beach_land_bomb_cart_v73.png", "sprite"),
-            ("beach_water_bomb", ASSET_DIR / "beach_water_bomb_v73.png", "sprite"),
-        ]
-        self.loaded = 0
-        self.error: str | None = None
-
-    @property
-    def total(self) -> int:
-        return len(self.jobs)
-
-    @property
-    def complete(self) -> bool:
-        return self.loaded >= self.total
-
-    def load_next(self) -> None:
-        if self.complete:
-            return
-        key, path, kind = self.jobs[self.loaded]
-        try:
-            source = pygame.image.load(str(path)).convert_alpha()
-            if kind == "image":
-                if key == "beach_bg":
-                    self.images[key] = self.fit_beach_background(source)
-                else:
-                    self.images[key] = pygame.transform.smoothscale(source, (WIDTH, HEIGHT))
-            elif kind == "sprite":
-                self.images[key] = source
-            else:
-                sprites = self.slice_atlas(source)
-                if kind == "units":
-                    self.unit_sprites[key.split("_")[0]] = sprites
-                elif kind == "units_l2":
-                    self.unit_l2_sprites[key.split("_")[0]] = sprites
-                else:
-                    self.zombie_sprites[key.split("_")[0]] = sprites
-        except pygame.error as exc:
-            self.error = f"Falha ao carregar {path.name}: {exc}"
-            placeholder = pygame.Surface((128, 128), pygame.SRCALPHA)
-            pygame.draw.circle(placeholder, RED, (64, 64), 42)
-            if kind == "image":
-                self.images[key] = pygame.transform.smoothscale(placeholder, (WIDTH, HEIGHT))
-            elif kind == "sprite":
-                self.images[key] = placeholder
-            elif kind == "units":
-                self.unit_sprites[key.split("_")[0]] = [placeholder] * 12
-            elif kind == "units_l2":
-                self.unit_l2_sprites[key.split("_")[0]] = [placeholder] * 12
-            else:
-                self.zombie_sprites[key.split("_")[0]] = [placeholder] * 12
-        self.loaded += 1
-
-    @staticmethod
-    def fit_beach_background(source: pygame.Surface) -> pygame.Surface:
-        """Alinha a arte da Praia às cinco faixas reais de combate.
-
-        A ilustração contém areia/canal/areia. Este enquadramento preserva a
-        textura pintada e coloca o canal no centro da terceira faixa (em vez
-        de deixar a água ocupar as faixas superiores da tela).
-        """
-        source_width, source_height = source.get_size()
-        source_water_top = int(source_height * 0.49)
-        source_water_bottom = int(source_height * 0.62)
-        target_water_top = int(HEIGHT * 0.61)
-        target_water_bottom = int(HEIGHT * 0.72)
-        canvas = pygame.Surface((WIDTH, HEIGHT)).convert()
-        bands = (
-            (0, source_water_top, 0, target_water_top),
-            (source_water_top, source_water_bottom, target_water_top, target_water_bottom),
-            (source_water_bottom, source_height, target_water_bottom, HEIGHT),
-        )
-        for source_top, source_bottom, target_top, target_bottom in bands:
-            source_rect = pygame.Rect(0, source_top, source_width, max(1, source_bottom - source_top))
-            target_size = (WIDTH, max(1, target_bottom - target_top))
-            band = source.subsurface(source_rect)
-            canvas.blit(pygame.transform.smoothscale(band, target_size), (0, target_top))
-        return canvas
-
-    @staticmethod
-    def slice_atlas(source: pygame.Surface) -> list[pygame.Surface]:
-        width, height = source.get_size()
-        tiles: list[pygame.Surface] = []
-        for row in range(3):
-            for col in range(4):
-                rect = pygame.Rect(col * width // 4, row * height // 3, width // 4, height // 3)
-                tile = source.subsurface(rect).copy()
-                if tile.get_flags() & pygame.SRCALPHA == 0:
-                    tile.set_colorkey((0, 0, 0))
-                tiles.append(tile)
-        return tiles
-
-    def base_unit(self, region: str, index: int) -> pygame.Surface:
-        sprites = self.unit_sprites.get(region, [])
-        if not sprites:
-            return pygame.Surface((1, 1), pygame.SRCALPHA)
-        return sprites[index % len(sprites)]
-
-    def unit(self, region: str, index: int, level: int = 1) -> pygame.Surface:
-        """N1 usa o atlas base; N2 recebe silhueta e uniforme próprios."""
-        if level >= 2:
-            sprites = self.unit_l2_sprites.get(region, [])
-            if sprites:
-                return sprites[index % len(sprites)]
-        return self.base_unit(region, index)
-
-    def zombie(self, region: str, index: int) -> pygame.Surface:
-        sprites = self.zombie_sprites.get(region, [])
-        if not sprites:
-            return pygame.Surface((1, 1), pygame.SRCALPHA)
-        return sprites[index % len(sprites)]
-
-    def scaled(self, sprite: pygame.Surface, width: float, height: float) -> pygame.Surface:
-        """Evita redimensionar os mesmos retratos gigantes a cada quadro."""
-        size = (max(1, int(width)), max(1, int(height)))
-        key = (id(sprite), *size)
-        cached = self.scale_cache.get(key)
-        if cached is None:
-            cached = pygame.transform.smoothscale(sprite, size)
-            self.scale_cache[key] = cached
-        return cached
+# Fifteen waves make the arc deliberate: the opening teaches placement,
+# waves 5/10/15 introduce bosses, and the final third escalates both the
+# horde and individual enemy pressure.  It cannot be solved by one row of a
+# single high-output card.
+WAVE_PROFILES = (
+    dict(count=3, unlock=1, hp=.72, speed=.80, damage=.66, spacing=1.46),
+    dict(count=4, unlock=2, hp=.80, speed=.86, damage=.73, spacing=1.34),
+    dict(count=5, unlock=2, hp=.91, speed=.91, damage=.82, spacing=1.22),
+    dict(count=7, unlock=3, hp=1.04, speed=.97, damage=.92, spacing=1.10),
+    dict(count=8, unlock=4, hp=1.20, speed=1.03, damage=1.04, spacing=1.00),
+    dict(count=10, unlock=4, hp=1.34, speed=1.08, damage=1.14, spacing=.91),
+    dict(count=12, unlock=5, hp=1.50, speed=1.13, damage=1.27, spacing=.82),
+    dict(count=14, unlock=6, hp=1.70, speed=1.18, damage=1.40, spacing=.74),
+    dict(count=16, unlock=6, hp=1.92, speed=1.23, damage=1.55, spacing=.67),
+    dict(count=18, unlock=7, hp=2.17, speed=1.29, damage=1.71, spacing=.61),
+    dict(count=20, unlock=7, hp=2.45, speed=1.35, damage=1.89, spacing=.56),
+    dict(count=23, unlock=8, hp=2.76, speed=1.41, damage=2.08, spacing=.51),
+    dict(count=26, unlock=8, hp=3.10, speed=1.47, damage=2.29, spacing=.47),
+    dict(count=29, unlock=9, hp=3.47, speed=1.53, damage=2.52, spacing=.43),
+    dict(count=33, unlock=9, hp=3.88, speed=1.60, damage=2.78, spacing=.39),
+)
 
 
 @dataclass
 class Defender:
     key: str
-    display_name: str
     row: int
     col: int
-    stats: dict
-    sprite_index: int
-    hp: float = field(init=False)
-    ammo: int = field(init=False)
-    attack_timer: float = 0.0
-    utility_timer: float = 0.0
-    stun: float = 0.0
-    corrosion: float = 0.0
-    ascended: float = 0.0
-    drone_timer: float = 0.0
-    turret_timer: float = 0.0
-    pulse: float = 0.0
-    region: str = "city"
-
-    def __post_init__(self) -> None:
-        self.hp = float(self.stats["hp"])
-        self.ammo = int(self.stats["ammo"])
-        if self.stats["role"] == "promoter":
-            self.utility_timer = float(self.stats["cooldown"])
-
-    @property
-    def x(self) -> float:
-        return cell_center(self.row, self.col, self.region)[0]
-
-    @property
-    def y(self) -> float:
-        return cell_center(self.row, self.col, self.region)[1]
-
-    @property
-    def max_hp(self) -> float:
-        return float(self.stats["hp"])
-
-    @property
-    def max_ammo(self) -> int:
-        return int(self.stats["ammo"])
-
-    def has_ammo(self) -> bool:
-        return self.max_ammo == 0 or self.ammo > 0
-
-    def hitbox(self) -> pygame.Rect:
-        return pygame.Rect(int(self.x - 38), int(self.y - 48), 76, 82)
+    hp: float
+    cooldown: float = .45
+    pulse: float = 0
+    attack: float = 0
+    used: bool = False
+    poison: float = 0
+    rank: int = 1
+    owner: tuple[int, int] | None = None
+    stun: float = 0
 
 
 @dataclass
-class Enemy:
+class Zombie:
     key: str
     row: int
-    data: dict
-    region: str
-    wave: int
-    x: float = field(default_factory=lambda: BOARD.right + 100)
-    hp: float = field(init=False)
-    attack_timer: float = 0.0
-    skill_timer: float = 1.8
-    age: float = 0.0
-    stun: float = 0.0
-    burn: float = 0.0
-    corrosion: float = 0.0
-    jump_used: bool = False
-    burrowed: bool = False
-    stolen: float = 0.0
-    revived: bool = False
-    rage: float = 0.0
-    boss_announced: bool = False
-    step_timer: float = 0.0
-
-    def __post_init__(self) -> None:
-        scale = boss_wave_scale(self.wave) if self.key in BOSSES else enemy_wave_scale(self.wave)
-        self.hp = float(self.data["hp"]) * scale
-
-    @property
-    def y(self) -> float:
-        return terrain_y(self.region, self.row, self.x)
-
-    @property
-    def max_hp(self) -> float:
-        scale = boss_wave_scale(self.wave) if self.is_boss else enemy_wave_scale(self.wave)
-        return float(self.data["hp"]) * scale
-
-    @property
-    def is_boss(self) -> bool:
-        return self.key in BOSSES
-
-    @property
-    def tags(self) -> tuple:
-        return tuple(self.data.get("tags", ()))
-
-    def hitbox(self) -> pygame.Rect:
-        size = 96 if self.is_boss else 68
-        return pygame.Rect(int(self.x - size / 2), int(self.y - size * 0.78), size, size)
+    x: float
+    hp: float
+    attack_timer: float = 0
+    slow: float = 0
+    jumped: bool = False
+    flash: float = 0
+    max_hp: float = 0
+    speed_scale: float = 1.0
+    damage_scale: float = 1.0
+    walk_phase: float = 0.0
+    attack_pulse: float = 0.0
+    boss_id: str | None = None
+    boss_power_timer: float = 0.0
+    rally: float = 0.0
 
 
 @dataclass
 class Projectile:
     x: float
     y: float
-    target: Enemy | Defender | None
-    target_x: float
-    target_y: float
+    row: int
     damage: float
-    kind: str
-    owner: Defender | Enemy | None
-    radius: float = 0.0
-    friendly: bool = True
-    travel: float = 0.22
-    elapsed: float = 0.0
-    effect: str = ""
-
-    def __post_init__(self) -> None:
-        # Protege o loop de animação contra chamadas antigas que passaram o
-        # efeito como último argumento posicional (onde elapsed ficava string).
-        if isinstance(self.elapsed, str):
-            if not self.effect:
-                self.effect = self.elapsed
-            self.elapsed = 0.0
-        self.elapsed = float(self.elapsed)
-        self.travel = max(0.01, float(self.travel))
+    speed: float
+    color: tuple[int, int, int]
+    splash: float = 0
+    slow: float = 0
+    pierce: int = 0
+    target_any: bool = False
+    flame: bool = False
+    visual: str = "bullet"
+    angle: float = 0
 
 
 @dataclass
@@ -1274,1984 +342,1821 @@ class Particle:
     y: float
     vx: float
     vy: float
-    ttl: float
-    size: float
     color: tuple[int, int, int]
-    gravity: float = 0.0
+    life: float
+    size: float
 
 
 @dataclass
-class FloatingText:
-    text: str
+class Effect:
+    key: str
     x: float
     y: float
-    color: tuple[int, int, int]
-    ttl: float = 1.0
+    life: float
+    max_life: float
+    scale: float = 1.0
+    angle: float = 0.0
+    spin: float = 0.0
 
 
 @dataclass
-class SpawnOrder:
-    wait: float
-    key: str
-    row: int
-    boss: bool = False
-
-
-@dataclass
-class LaneBomb:
-    """Carrinho-bomba de emergência, um por faixa de combate."""
-
-    row: int
-    x: float = field(default_factory=lambda: BOARD.left - 32)
-    state: str = "armed"  # armed -> rolling -> spent
-    kills: int = 0
-
-
-class Battle:
-    def __init__(self, app: "Game", region: str, selected: list[tuple[str, str]]) -> None:
-        self.app = app
-        self.region = region
-        self.selected = selected
-        self.defenders: list[Defender] = []
-        self.enemies: list[Enemy] = []
-        self.projectiles: list[Projectile] = []
-        self.particles: list[Particle] = []
-        self.texts: list[FloatingText] = []
-        # O suficiente para experimentar a primeira formação, mas sem tornar
-        # a economia da campanha irrelevante.
-        self.supplies = 110
-        self.wave = 0
-        self.wave_banner = 0.0
-        self.intermission = 2.5
-        self.orders: list[SpawnOrder] = []
-        self.spawn_timer = 0.0
-        self.started_wave = False
-        self.finished = False
-        self.lost = False
-        self.victory = False
-        self.message = "Posicione a equipe. A primeira horda começa leve."
-        self.message_timer = 4.0
-        self.selected_card = 0
-        self.use_core = False
-        self.remove_mode = False
-        self.cores = 0
-        self.boss_seen: set[int] = set()
-        self.ambient_phase = 0.0
-        self.shake = 0.0
-        self.global_toxic = 0.0
-        self.boss_warning = 0.0
-        self.boss_banner_name = ""
-        self.boss_banner_subtitle = ""
-        self.boss_alert_pending = False
-        self.paused = False
-        self.dead_history: list[tuple[str, int, float]] = []
-        # Cinco faixas: areia, areia, CANAL, areia, areia. Como esta versão
-        # usa cinco linhas, o canal central ocupa só a terceira linha.
-        self.water_rows = {2} if region == "beach" else set()
-        self.lane_bombs = [LaneBomb(row) for row in range(ROWS)]
-        self.card_cooldowns = [0.0 for _ in selected]
-
-    def announce(self, message: str, seconds: float = 2.5, color: tuple[int, int, int] = WHITE) -> None:
-        self.message = message
-        self.message_timer = seconds
-        # Alertas de interface são exibidos na aba superior. Assim eles não
-        # atravessam as cartas nem reintroduzem uma faixa de texto na partida.
-
-    def cell_is_water(self, row: int, col: int) -> bool:
-        if self.region != "beach":
-            return False
-        # O canal da Praia é a única faixa aquática utilizável.
-        return row in self.water_rows
-
-    def ground_cell_rect(self, row: int, col: int) -> pygame.Rect:
-        x, y = cell_center(row, col, self.region)
-        return pygame.Rect(int(x - CELL_W / 2 + 7), int(y - CELL_H / 2 + 7), int(CELL_W - 14), int(CELL_H - 14))
-
-    def board_cell_at(self, pos: tuple[int, int]) -> tuple[int, int] | None:
-        """Traduz um clique no terreno para a faixa mais próxima desenhada."""
-        if not BOARD.left <= pos[0] <= BOARD.right:
-            return None
-        col = int(clamp((pos[0] - BOARD.left) / CELL_W, 0, COLS - 1))
-        row = min(range(ROWS), key=lambda candidate: abs(pos[1] - cell_center(candidate, col, self.region)[1]))
-        if abs(pos[1] - cell_center(row, col, self.region)[1]) > CELL_H * 0.68:
-            return None
-        return row, col
-
-    def card(self) -> tuple[str, str]:
-        return self.selected[self.selected_card]
-
-    def can_place(self, key: str, row: int, col: int) -> tuple[bool, str]:
-        if not (0 <= row < ROWS and 0 <= col < COLS):
-            return False, "Fora da área de combate."
-        if any(d.row == row and d.col == col for d in self.defenders):
-            return False, "Este ponto já está ocupado."
-        data = DEFENSES[key]
-        water = self.cell_is_water(row, col)
-        if data.get("water_only") and not water:
-            return False, "Unidade aquática: só pode ser instalada nas faixas de água da Praia."
-        if water and not data.get("water_only") and key not in {"barreira", "barreira_reativa", "mina", "mina_segura"}:
-            return False, "Nesta faixa há água. Posicione uma embarcação, uma mina marítima ou uma barreira."
-        if self.supplies < data["cost"]:
-            return False, "Suprimentos insuficientes."
-        return True, ""
-
-    def place(self, row: int, col: int) -> None:
-        key, display = self.card()
-        allowed, reason = self.can_place(key, row, col)
-        if not allowed:
-            self.announce(reason, 1.7, RED)
-            return
-        data = DEFENSES[key]
-        self.supplies -= data["cost"]
-        sprite_index = int(data["sprite"])
-        if self.region == "beach":
-            if key == "lancha":
-                sprite_index = 5
-            elif key == "submarino":
-                sprite_index = 6
-            elif key in {"bombardeiro", "granadeiro", "lanca_chamas", "lanca_chamas_bolso"}:
-                sprite_index = 7
-            elif key in {"engenheiro", "mecanico"}:
-                sprite_index = 8
-            elif key in {"radio", "torre_radio"}:
-                sprite_index = 9
-            elif key in {"medico", "medico_experiente"}:
-                sprite_index = 10
-            elif key in {"barreira", "barreira_reativa", "mina", "mina_segura", "bomba_agua"}:
-                sprite_index = 11
-        elif self.region == "desert":
-            if key in {"morteiro", "morteiro_basico"}:
-                sprite_index = 5
-            elif key in {"bombardeiro", "granadeiro"}:
-                sprite_index = 6
-            elif key in {"engenheiro", "mecanico"}:
-                sprite_index = 7
-            elif key in {"radio", "torre_radio"}:
-                sprite_index = 8
-            elif key in {"medico", "medico_experiente"}:
-                sprite_index = 9
-            elif key in {"lanca_chamas", "lanca_chamas_bolso"}:
-                sprite_index = 10
-            elif key in {"barreira", "barreira_reativa", "mina", "mina_segura"}:
-                sprite_index = 11
-        else:
-            if key in {"bombardeiro", "granadeiro", "morteiro", "morteiro_basico"}:
-                sprite_index = 5
-            elif key in {"engenheiro", "mecanico"}:
-                sprite_index = 6
-            elif key in {"radio", "torre_radio"}:
-                sprite_index = 7
-            elif key in {"medico", "medico_experiente"}:
-                sprite_index = 8
-            elif key in {"lanca_chamas", "lanca_chamas_bolso"}:
-                sprite_index = 9
-            elif key in {"barreira", "barreira_reativa", "mina", "mina_segura"}:
-                sprite_index = 10 if key in {"barreira", "barreira_reativa"} else 11
-        defender = Defender(key, display, row, col, data, sprite_index, region=self.region)
-        self.defenders.append(defender)
-        self.card_cooldowns[self.selected_card] = 0.55
-        self.pulse(defender.x, defender.y, self.region_color(), 20)
-        self.announce(f"{display} em posição.", 1.2, self.region_color())
-
-    def remove_defender(self, row: int, col: int) -> None:
-        """Retira uma defesa por escolha do jogador e devolve parte do custo."""
-        defender = next((d for d in self.defenders if d.row == row and d.col == col), None)
-        if defender is None:
-            self.announce("Nenhuma tropa nesta faixa para remover.", 1.4, GRAY)
-            return
-        self.defenders.remove(defender)
-        refund = max(1, math.ceil(float(defender.stats["cost"]) * 0.35))
-        self.supplies += refund
-        self.pulse(defender.x, defender.y, (188, 206, 214), 12)
-        self.announce(f"{defender.display_name} recolhido: +{refund} SUP.", 1.8, TEAL)
-
-    def trigger_lane_bomb(self, row: int) -> bool:
-        cart = self.lane_bombs[row]
-        if cart.state != "armed":
-            return False
-        cart.state = "rolling"
-        cart.x = BOARD.left - 42
-        self.shake = max(self.shake, 0.16)
-        label, color = self.lane_bomb_info(row)
-        self.announce(f"{label} — faixa {row + 1} ativada!", 1.8, color)
-        self.pulse(cart.x + 24, cell_center(row, 0, self.region)[1], color, 16)
-        return True
-
-    def lane_bomb_info(self, row: int) -> tuple[str, tuple[int, int, int]]:
-        """Retorna a contenção própria de cada terreno/faixa."""
-        if self.region == "city":
-            return "BOMBA URBANA", GOLD
-        if self.region == "desert":
-            return "CARGA DAS DUNAS", (235, 181, 88)
-        if row in self.water_rows:
-            return "BOIA-BOMBA", (95, 209, 236)
-        return "CARGA COSTEIRA", (104, 201, 207)
-
-    def lane_bomb_asset_key(self, row: int) -> str:
-        if self.region == "city":
-            return "lane_bomb_cart"
-        if self.region == "desert":
-            return "desert_lane_bomb_cart"
-        return "beach_water_bomb" if row in self.water_rows else "beach_land_bomb_cart"
-
-    def update_lane_bombs(self, dt: float) -> None:
-        """Move o carrinho-bomba e limpa somente a faixa invadida uma vez."""
-        for cart in self.lane_bombs:
-            if cart.state != "rolling":
-                continue
-            cart.x += 720 * dt
-            y = cell_center(cart.row, 0, self.region)[1]
-            if random.random() < dt * 18:
-                _, trail_color = self.lane_bomb_info(cart.row)
-                gravity = 0 if cart.row in self.water_rows else 18
-                self.particles.append(Particle(cart.x - 28, y + 12, random.uniform(-55, -20), random.uniform(-15, 15), 0.42, 2.6, trail_color, gravity))
-            for enemy in self.enemies[:]:
-                if enemy.row == cart.row and abs(enemy.x - cart.x) < 67:
-                    self.take_enemy_damage(enemy, 99999, "explosion")
-                    cart.kills += 1
-            if cart.x > BOARD.right + 82:
-                cart.state = "spent"
-                _, explosion_color = self.lane_bomb_info(cart.row)
-                self.explosion(BOARD.right - 18, y, explosion_color, 22)
-
-    @staticmethod
-    def menu_rect() -> pygame.Rect:
-        return pygame.Rect(16, 126, 90, 34)
-
-    @staticmethod
-    def pause_rect() -> pygame.Rect:
-        return pygame.Rect(112, 126, 92, 34)
-
-    @staticmethod
-    def remove_rect() -> pygame.Rect:
-        return pygame.Rect(210, 126, 112, 34)
-
-    @staticmethod
-    def core_rect() -> pygame.Rect:
-        return pygame.Rect(328, 126, 118, 34)
-
-    @staticmethod
-    def next_wave_rect() -> pygame.Rect:
-        return pygame.Rect(452, 126, 144, 34)
-
-    def apply_core(self, row: int, col: int) -> None:
-        target = next((d for d in self.defenders if d.row == row and d.col == col), None)
-        if target is None:
-            self.announce("Escolha uma tropa já posicionada para usar o Núcleo.", 1.8, RED)
-            return
-        if target.ascended > 0:
-            self.announce("Esta tropa já está ascensionada.", 1.6, GOLD)
-            return
-        if self.cores <= 0:
-            self.use_core = False
-            return
-        self.cores -= 1
-        self.use_core = False
-        target.ascended = 18.0
-        target.ammo = target.max_ammo
-        target.stun = 0
-        target.corrosion = 0
-        self.announce(f"NÚCLEO DE ASCENSÃO: {target.display_name} no Nível 3!", 2.8, GOLD)
-        self.pulse(target.x, target.y, GOLD, 38)
-
-    def start_next_wave(self) -> None:
-        if self.wave >= 15:
-            return
-        self.wave += 1
-        self.started_wave = True
-        self.wave_banner = 3.0
-        self.orders = self.build_wave(self.wave)
-        self.spawn_timer = 0.35
-        self.intermission = 0.0
-        if self.wave % 5 == 0:
-            boss_key = REGIONS[self.region]["bosses"][self.wave // 5 - 1]
-            self.boss_banner_name = BOSSES[boss_key]["name"]
-            self.boss_banner_subtitle = "A ESCOLTA ABRE CAMINHO"
-            self.announce(f"Onda {self.wave}: a escolta do chefe está a caminho.", 2.6, RED)
-        else:
-            self.announce(f"ONDA {self.wave}/15", 2.0, WHITE)
-
-    def build_wave(self, wave: int) -> list[SpawnOrder]:
-        pool = list(REGION_ENEMIES[self.region])
-        # Começa apenas com o invasor-base e introduz os counters de forma
-        # gradativa. No fim, quase todo o elenco da região pode aparecer.
-        unlocked_count = min(len(pool), 1 + (wave - 1) // 2 + wave // 10)
-        pool = pool[:unlocked_count]
-        orders: list[SpawnOrder] = []
-        count = 2 + wave + (wave * wave) // 11
-        difficulty = wave / 15
-        for index in range(count):
-            if index < 3:
-                key = pool[min(index, len(pool) - 1)]
-            else:
-                weighted = pool.copy()
-                if difficulty > 0.35:
-                    weighted.extend(pool[-min(3, len(pool)):])
-                if difficulty > 0.70:
-                    weighted.extend(pool[-min(5, len(pool)):])
-                key = random.choice(weighted)
-            wait = 0.92 - min(0.58, wave * 0.038) + random.random() * 0.22
-            orders.append(SpawnOrder(wait, key, random.randrange(ROWS)))
-        if wave % 5 == 0:
-            boss_key = REGIONS[self.region]["bosses"][wave // 5 - 1]
-            # A escolta cria pressão, mas não enterra o jogador sob uma segunda
-            # horda no mesmo instante em que o chefe entra.
-            for _ in range(2 + wave // 5):
-                orders.insert(random.randrange(len(orders) + 1), SpawnOrder(0.32, random.choice(pool[-min(4, len(pool)):]), random.randrange(ROWS)))
-            boss_row = random.choice(tuple(self.water_rows)) if self.region == "beach" else random.randrange(ROWS)
-            orders.append(SpawnOrder(1.15, boss_key, boss_row, True))
-        return orders
-
-    def spawn_enemy(self, order: SpawnOrder) -> None:
-        data = BOSSES.get(order.key) or ENEMIES[order.key]
-        enemy = Enemy(order.key, order.row, data, self.region, self.wave)
-        if order.boss:
-            enemy.x = BOARD.right + 110
-            enemy.boss_announced = True
-            self.shake = 0.38
-        self.enemies.append(enemy)
-        if order.boss:
-            self.boss_banner_name = str(data["name"])
-            self.boss_banner_subtitle = "ENTRADA ESPECIAL ATIVADA"
-            self.boss_entrance(enemy)
-
-    def region_color(self) -> tuple[int, int, int]:
-        return REGIONS[self.region]["accent"]
-
-    def target_in_range(self, defender: Defender, min_distance: float = 0) -> Enemy | None:
-        maximum = float(defender.stats["range"]) * CELL_W
-        choices = [
-            enemy
-            for enemy in self.enemies
-            if enemy.row == defender.row
-            and enemy.x >= defender.x + min_distance
-            and enemy.x - defender.x <= maximum
-            and enemy.hp > 0
-        ]
-        return min(choices, key=lambda e: e.x) if choices else None
-
-    def blocker_for(self, enemy: Enemy) -> Defender | None:
-        choices = [
-            defender
-            for defender in self.defenders
-            if defender.row == enemy.row and defender.hp > 0 and defender.x <= enemy.x + 38
-        ]
-        if not choices:
-            return None
-        nearest = max(choices, key=lambda d: d.x)
-        if enemy.x - nearest.x < 55:
-            return nearest
-        return None
-
-    def take_enemy_damage(self, enemy: Enemy, amount: float, effect: str = "", source: Defender | None = None) -> None:
-        if enemy.hp <= 0:
-            return
-        armor = float(enemy.data.get("armor", 0))
-        if "shield" in enemy.tags and effect not in {"flame", "explosion", "mortar"}:
-            armor = max(armor, 0.52)
-        if source and source.ascended > 0:
-            amount *= 1.55
-        enemy.hp -= amount * (1 - armor)
-        if effect == "flame":
-            enemy.burn = max(enemy.burn, 3.3)
-        if effect == "acid":
-            enemy.corrosion = max(enemy.corrosion, 2.5)
-        self.texts.append(FloatingText(str(int(amount)), enemy.x, enemy.y - 52, GOLD if source and source.ascended else WHITE, 0.55))
-        if enemy.hp <= 0:
-            self.kill_enemy(enemy)
-
-    def damage_defender(self, defender: Defender, amount: float, effect: str = "") -> None:
-        if defender.hp <= 0:
-            return
-        defender.hp -= amount
-        if effect == "stun":
-            defender.stun = max(defender.stun, 2.2)
-        elif effect == "acid":
-            defender.corrosion = max(defender.corrosion, 4.0)
-        elif effect == "acid_brief":
-            defender.corrosion = max(defender.corrosion, 1.8)
-        self.texts.append(FloatingText(str(int(amount)), defender.x, defender.y - 48, RED, 0.6))
-        if defender.hp <= 0:
-            self.kill_defender(defender)
-
-    def kill_defender(self, defender: Defender) -> None:
-        if defender not in self.defenders:
-            return
-        self.defenders.remove(defender)
-        self.pulse(defender.x, defender.y, RED, 25)
-        if defender.stats["role"] == "barrier" and defender.stats["level"] >= 2:
-            for enemy in self.enemies[:]:
-                if enemy.row == defender.row and abs(enemy.x - defender.x) < CELL_W * 1.35:
-                    self.take_enemy_damage(enemy, defender.stats["damage"], "explosion")
-            self.explosion(defender.x, defender.y, RED, 28)
-        self.announce(f"{defender.display_name} foi perdido.", 1.5, RED)
-
-    def kill_enemy(self, enemy: Enemy) -> None:
-        if enemy not in self.enemies:
-            return
-        self.enemies.remove(enemy)
-        self.dead_history.append((enemy.key, enemy.row, enemy.x))
-        if len(self.dead_history) > 12:
-            self.dead_history.pop(0)
-        color = (130, 230, 145) if not enemy.is_boss else GOLD
-        self.explosion(enemy.x, enemy.y, color, 26 if enemy.is_boss else 12)
-        if "explode_death" in enemy.tags:
-            for defender in self.defenders[:]:
-                if defender.row == enemy.row and abs(defender.x - enemy.x) < CELL_W * 1.15:
-                    self.damage_defender(defender, 52 + self.wave * 2, "acid")
-            self.explosion(enemy.x, enemy.y, (114, 212, 99), 25)
-        if enemy.is_boss:
-            self.cores = min(3, self.cores + 1)
-            self.supplies += 60
-            self.boss_seen.add(self.wave)
-            self.announce("Chefe neutralizado: +1 Núcleo de Ascensão e +60 suprimentos.", 3.4, GOLD)
-            self.pulse(WIDTH / 2, HEIGHT / 2, GOLD, 75)
-        else:
-            self.supplies += 1 if self.wave < 8 else 2
-
-    def pulse(self, x: float, y: float, color: tuple[int, int, int], amount: int) -> None:
-        for _ in range(amount):
-            angle = random.random() * math.tau
-            speed = random.uniform(35, 125)
-            self.particles.append(
-                Particle(x, y, math.cos(angle) * speed, math.sin(angle) * speed, random.uniform(0.35, 0.9), random.uniform(2, 5), color, 42)
-            )
-
-    def explosion(self, x: float, y: float, color: tuple[int, int, int], amount: int) -> None:
-        self.pulse(x, y, color, amount)
-        self.shake = max(self.shake, 0.16)
-
-    def fire_defender(self, defender: Defender, target: Enemy) -> None:
-        role = defender.stats["role"]
-        level = defender.stats["level"]
-        ascending = defender.ascended > 0
-        if role in {"reload", "radio", "medic", "promoter", "barrier", "mine"}:
-            return
-        if defender.max_ammo > 0:
-            defender.ammo -= 1
-        defender.attack_timer = float(defender.stats["cooldown"]) * (0.68 if ascending else 1.0)
-        # Pequeno clarão e fumaça deixam a cadência das armas legível sem
-        # substituir as artes dos soldados por uma animação pesada.
-        for _ in range(4 if role in {"shotgun", "grenade", "mortar"} else 2):
-            self.particles.append(
-                Particle(
-                    defender.x + 24,
-                    defender.y - 28,
-                    random.uniform(24, 70),
-                    random.uniform(-18, 18),
-                    0.16,
-                    random.uniform(1.5, 3.2),
-                    GOLD,
-                )
-            )
-        if role == "sniper" and level == 1 and not ascending and random.random() < 0.28:
-            self.texts.append(FloatingText("ERROU", target.x, target.y - 42, GRAY, 0.7))
-            self.projectiles.append(Projectile(defender.x + 15, defender.y - 22, None, target.x, target.y - 18, 0, "tracer", defender, travel=0.22))
-            return
-        damage = float(defender.stats["damage"])
-        kind = "bullet"
-        radius = 0.0
-        effect = ""
-        if role == "rifle":
-            kind = "rifle"
-            if ascending:
-                kind, radius = "fuzileiro", CELL_W * 0.72
-                damage *= 1.25
-        elif role == "shotgun":
-            kind, radius = "shotgun", CELL_W * (0.45 if ascending else 0.25)
-            distance = max(1, (target.x - defender.x) / CELL_W)
-            damage *= 1.45 if distance < 1.2 else 0.9
-            if ascending:
-                damage *= 1.4
-        elif role == "sniper":
-            kind = "sniper"
-            if ascending:
-                damage *= 2.55
-        elif role in {"grenade", "mortar"}:
-            kind = "mortar" if role == "mortar" else "grenade"
-            radius = CELL_W * (1.05 if ascending else 0.78)
-            effect = "mortar"
-            if ascending and role == "mortar":
-                for offset in (-1, 1):
-                    clone = self.closest_enemy_at(target.row + offset, target.x)
-                    if clone:
-                        self.projectiles.append(
-                            Projectile(defender.x, defender.y - 24, clone, clone.x, clone.y - 15, damage * 0.72, kind, defender, radius, True, 0.45, effect=effect)
-                        )
-            if ascending and role == "grenade":
-                kind, radius, damage = "bazooka", BOARD.width, damage * 1.45
-        elif role == "flame":
-            kind, radius, effect = "flame", CELL_W * 0.55, "flame"
-            damage *= 0.62
-        elif role == "boat":
-            kind = "boat"
-        elif role == "sub":
-            kind, radius = "torpedo", CELL_W * 0.42
-        self.projectiles.append(
-            Projectile(defender.x + 16, defender.y - 22, target, target.x, target.y - 16, damage, kind, defender, radius, True, 0.24 if kind in {"rifle", "flame"} else 0.42, effect=effect)
-        )
-
-    def closest_enemy_at(self, row: int, x: float) -> Enemy | None:
-        candidates = [enemy for enemy in self.enemies if enemy.row == row and enemy.hp > 0]
-        return min(candidates, key=lambda e: abs(e.x - x)) if candidates else None
-
-    def promote_defender(self, instructor: Defender) -> bool:
-        """Converte uma tropa N1 real em sua carta N2 correspondente.
-
-        O alcance considera também as faixas vizinhas para não punir a posição
-        visual do Sargento, mas o alvo mais perto ainda é previsível para quem
-        quer escolher qual carta vai subir primeiro.
-        """
-        radius = float(instructor.stats["range"]) * CELL_W
-        candidates = [
-            defender
-            for defender in self.defenders
-            if defender is not instructor
-            and defender.key in PROMOTIONS
-            and int(defender.stats["level"]) == 1
-            and defender.ascended <= 0
-            and abs(defender.x - instructor.x) <= radius
-            and abs(defender.row - instructor.row) <= 1
-        ]
-        if not candidates:
-            # Não reinicia o minuto inteiro se ainda não houver uma tropa N1
-            # válida por perto: o jogador ganha uma pequena janela para criar
-            # ou reposicionar a candidata.
-            instructor.utility_timer = 8.0
-            return False
-
-        target = min(candidates, key=lambda defender: (abs(defender.x - instructor.x), abs(defender.row - instructor.row)))
-        target_key = PROMOTIONS[target.key]
-        upgraded = DEFENSES[target_key]
-        old_hp_ratio = target.hp / max(1.0, target.max_hp)
-        old_ammo_ratio = target.ammo / max(1, target.max_ammo) if target.max_ammo else 1.0
-        target.key = target_key
-        target.stats = upgraded
-        target.sprite_index = int(upgraded["sprite"])
-        target.hp = max(1.0, float(upgraded["hp"]) * max(0.55, old_hp_ratio))
-        target.ammo = int(round(int(upgraded["ammo"]) * old_ammo_ratio)) if int(upgraded["ammo"]) else 0
-        target.attack_timer = 0.0
-        target.utility_timer = 0.0
-        target.stun = 0.0
-        target.corrosion = 0.0
-        target.display_name = self.display_name_for(target_key)
-        instructor.utility_timer = float(instructor.stats["cooldown"])
-        self.announce(f"PROMOÇÃO CONCLUÍDA: {target.display_name} agora é N2!", 2.5, GOLD)
-        self.pulse(target.x, target.y - 12, GOLD, 28)
-        return True
-
-    def display_name_for(self, key: str) -> str:
-        """Mantém a nomenclatura regional quando uma carta muda de nível."""
-        for roster_key, display in REGION_ROSTERS[self.region]:
-            if roster_key == key:
-                return display
-        return str(DEFENSES[key]["base"])
-
-    def utility_defender(self, defender: Defender, dt: float) -> None:
-        role = defender.stats["role"]
-        if role == "reload":
-            if defender.utility_timer <= 0:
-                radius = float(defender.stats["range"]) * CELL_W
-                reloaded = 0
-                for ally in self.defenders:
-                    if ally is defender or ally.row != defender.row:
-                        continue
-                    if abs(ally.x - defender.x) <= radius + 1 and ally.max_ammo > 0:
-                        amount = 4 if defender.stats["level"] == 1 else 7
-                        if ally.ascended > 0:
-                            amount += 2
-                        previous = ally.ammo
-                        ally.ammo = min(ally.max_ammo, ally.ammo + amount)
-                        reloaded += ally.ammo - previous
-                defender.utility_timer = float(defender.stats["cooldown"]) * (0.34 if defender.ascended else 1.0)
-                if reloaded:
-                    self.pulse(defender.x, defender.y - 18, TEAL, 7)
-                    self.texts.append(FloatingText(f"+{reloaded} munição", defender.x, defender.y - 56, TEAL, 0.8))
-            if defender.stats["level"] >= 2:
-                defender.drone_timer -= dt
-                target = self.target_in_range(defender)
-                if defender.drone_timer <= 0 and target:
-                    defender.drone_timer = 1.1 if not defender.ascended else 0.7
-                    self.projectiles.append(Projectile(defender.x + 18, defender.y - 55, target, target.x, target.y - 24, 17 if not defender.ascended else 32, "drone", defender, 0, True, 0.25))
-                if defender.ascended:
-                    defender.turret_timer -= dt
-                    turret_targets = [
-                        enemy
-                        for enemy in self.enemies
-                        if enemy.row == defender.row
-                        and enemy.x >= defender.x
-                        and enemy.x - defender.x <= CELL_W * 4.2
-                    ]
-                    if defender.turret_timer <= 0 and turret_targets:
-                        target = min(turret_targets, key=lambda enemy: enemy.x)
-                        turret_x = min(BOARD.right - 18, defender.x + CELL_W * 0.7)
-                        self.projectiles.append(
-                            Projectile(turret_x, defender.y - 31, target, target.x, target.y - 20, 31, "turret", defender, 0, True, 0.16)
-                        )
-                        defender.turret_timer = 0.31
-        elif role == "radio" and defender.utility_timer <= 0:
-            gain = 14 if defender.stats["level"] == 1 else 28
-            if defender.ascended:
-                gain = 52
-            self.supplies += gain
-            defender.utility_timer = float(defender.stats["cooldown"]) * (0.48 if defender.ascended else 1.0)
-            self.texts.append(FloatingText(f"+{gain} SUP", defender.x, defender.y - 55, GOLD, 1.0))
-            self.pulse(defender.x, defender.y - 18, GOLD, 8)
-        elif role == "medic" and defender.utility_timer <= 0:
-            radius = float(defender.stats["range"]) * CELL_W
-            healed = False
-            for ally in self.defenders:
-                if abs(ally.x - defender.x) <= radius and abs(ally.row - defender.row) <= 1:
-                    if defender.stats["level"] >= 2 and ally.hp < ally.max_hp:
-                        ally.hp = min(ally.max_hp, ally.hp + 26 + (16 if defender.ascended else 0))
-                        healed = True
-                    if defender.stats["level"] == 1 or defender.ascended:
-                        if ally.stun > 0 or ally.corrosion > 0:
-                            ally.stun = 0
-                            ally.corrosion = 0
-                            healed = True
-            defender.utility_timer = float(defender.stats["cooldown"]) * (0.65 if defender.ascended else 1.0)
-            if healed:
-                self.pulse(defender.x, defender.y - 16, (104, 225, 164), 9)
-        elif role == "promoter" and defender.utility_timer <= 0:
-            self.promote_defender(defender)
-
-    def update_defenders(self, dt: float) -> None:
-        for defender in self.defenders[:]:
-            defender.attack_timer -= dt
-            defender.utility_timer -= dt
-            defender.stun = max(0.0, defender.stun - dt)
-            defender.corrosion = max(0.0, defender.corrosion - dt)
-            defender.ascended = max(0.0, defender.ascended - dt)
-            defender.pulse += dt
-            if defender.corrosion > 0 and random.random() < dt * 1.6:
-                self.damage_defender(defender, 1.6)
-            if defender.stats["role"] == "mine":
-                target = next((enemy for enemy in self.enemies if enemy.row == defender.row and abs(enemy.x - defender.x) < 49), None)
-                if target:
-                    is_safe = defender.stats["level"] >= 2
-                    if is_safe or random.random() < 0.72:
-                        if defender.ascended:
-                            for enemy in self.enemies[:]:
-                                if enemy.row == defender.row:
-                                    self.take_enemy_damage(enemy, 9999, "explosion", defender)
-                            self.announce("Mina ascensionada: linha inteira limpa!", 1.7, GOLD)
-                        else:
-                            radius = CELL_W * (0.82 if defender.key == "bomba_agua" else 0.35)
-                            for enemy in self.enemies[:]:
-                                if enemy.row == defender.row and abs(enemy.x - defender.x) < radius:
-                                    self.take_enemy_damage(enemy, defender.stats["damage"], "explosion", defender)
-                        self.explosion(defender.x, defender.y, GOLD, 18)
-                    else:
-                        self.announce("A mina falhou!", 1.2, RED)
-                    self.defenders.remove(defender)
-                continue
-            if defender.stun > 0:
-                continue
-            self.utility_defender(defender, dt)
-            role = defender.stats["role"]
-            minimum = CELL_W * 1.05 if role == "mortar" else 0
-            target = self.target_in_range(defender, minimum)
-            if target and defender.attack_timer <= 0 and defender.has_ammo():
-                self.fire_defender(defender, target)
-
-    @staticmethod
-    def is_military_defender(defender: Defender) -> bool:
-        """Tropas humanas recebem os efeitos globais de entrada dos chefes.
-
-        Minas e barreiras são equipamentos fixos; elas continuam como opção de
-        contenção quando uma chegada especial fecha temporariamente os tiros.
-        """
-        return defender.stats["role"] not in {"barrier", "mine"}
-
-    def boss_entrance(self, enemy: Enemy) -> None:
-        """Executa uma única ação de entrada. Ela nunca é reutilizada no ciclo.
-
-        Cada chefe ganha um impacto memorável ao aparecer, mas a ação recorrente
-        que vem depois é menor, localizada e possui um intervalo legível.
-        """
-        boss_type = enemy.data.get("type", "")
-        self.shake = max(self.shake, 0.42)
-        if boss_type == "bruto_demolidor":
-            for defender in self.defenders:
-                if self.is_military_defender(defender):
-                    defender.stun = max(defender.stun, 3.0)
-            enemy.skill_timer = 18.0
-            self.announce("BRUTO DEMOLIDOR: tropas militares paralisadas por 3 s!", 2.8, RED)
-        elif boss_type == "comandante":
-            for other in self.enemies:
-                if other is not enemy and abs(other.x - enemy.x) < CELL_W * 4.2:
-                    other.rage = max(other.rage, 2.4)
-            enemy.skill_timer = 14.0
-            self.announce("Comandante dos Mortos: a escolta recebeu fúria!", 2.4, RED)
-        elif boss_type == "alfa":
-            self.global_toxic = 1.2
-            for defender in self.defenders:
-                defender.corrosion = max(defender.corrosion, 1.0)
-            enemy.skill_timer = 14.0
-            self.announce("Cuspidor Alfa: névoa ácida global por um instante!", 2.4, (150, 232, 112))
-        elif boss_type == "mutante":
-            for defender in self.defenders[:]:
-                if abs(defender.row - enemy.row) <= 1 and abs(defender.x - enemy.x) < CELL_W * 2.25:
-                    self.damage_defender(defender, 8)
-                    defender.stun = max(defender.stun, 1.15)
-            enemy.skill_timer = 14.0
-            self.announce("Mutante das Ruínas: o abalo atingiu apenas a vanguarda próxima.", 2.2, RED)
-        elif boss_type == "necromante":
-            self.enemies.append(Enemy("necromante_minion", enemy.row, ENEMIES["necromante_minion"], self.region, self.wave, x=enemy.x + 48))
-            enemy.skill_timer = 15.0
-            self.announce("Necromante: uma múmia foi invocada na chegada.", 2.3, (197, 128, 238))
-        elif boss_type == "colosso":
-            for defender in self.defenders:
-                if self.is_military_defender(defender):
-                    defender.stun = max(defender.stun, 1.2)
-            enemy.skill_timer = 18.0
-            self.announce("Colosso Mutante: tremor inicial interrompeu os tiros por 1,2 s.", 2.4, RED)
-        elif boss_type == "tide":
-            for defender in self.defenders[:]:
-                if defender.row == enemy.row and defender.stats.get("water_only"):
-                    self.damage_defender(defender, 8)
-                    defender.stun = max(defender.stun, 0.9)
-            enemy.skill_timer = 14.0
-            self.announce("Bruto da Maré: a primeira onda abalou o canal.", 2.1, (95, 195, 239))
-        elif boss_type == "hunter":
-            enemy.x = max(BOARD.left + CELL_W * 4.8, enemy.x - CELL_W * 0.7)
-            enemy.skill_timer = 13.0
-            self.announce("Caçador Abissal: mergulhou e surgiu mais perto no canal.", 2.1, (95, 195, 239))
-        elif boss_type == "leviathan":
-            for defender in self.defenders[:]:
-                if defender.row == enemy.row and defender.stats.get("water_only"):
-                    self.damage_defender(defender, 14)
-                    defender.stun = max(defender.stun, 1.2)
-            enemy.skill_timer = 18.0
-            self.announce("LEVIATÃ: uma onda de entrada atingiu a faixa de água.", 2.4, (95, 195, 239))
-        else:
-            enemy.skill_timer = 12.0
-
-    def boss_skill(self, enemy: Enemy) -> None:
-        """Habilidade recorrente, sempre mais justa que a entrada do chefe."""
-        boss_type = enemy.data.get("type", "")
-        cooldowns = {
-            "bruto_demolidor": 18.0,
-            "comandante": 14.0,
-            "alfa": 14.0,
-            "mutante": 14.0,
-            "necromante": 15.0,
-            "colosso": 18.0,
-            "tide": 14.0,
-            "hunter": 13.0,
-            "leviathan": 18.0,
-        }
-        enemy.skill_timer = cooldowns.get(boss_type, 12.0)
-        self.shake = max(self.shake, 0.24)
-
-        if boss_type == "bruto_demolidor":
-            # Regra central do primeiro chefe: sem stun global repetido. O
-            # martelo fecha somente a faixa na qual o chefe está por 1,2 s.
-            targets = [d for d in self.defenders if d.row == enemy.row and self.is_military_defender(d)]
-            for defender in targets:
-                defender.stun = max(defender.stun, 1.2)
-                self.pulse(defender.x, defender.y - 22, RED, 7)
-            self.announce(f"Martelo do Bruto: faixa {enemy.row + 1} interrompida por 1,2 s.", 2.0, RED)
-        elif boss_type == "comandante":
-            escorts = [
-                other for other in self.enemies
-                if other is not enemy and abs(other.row - enemy.row) <= 1 and abs(other.x - enemy.x) < CELL_W * 2.8
-            ]
-            for other in escorts:
-                other.rage = max(other.rage, 2.2)
-            targets = [d for d in self.defenders if d.row == enemy.row and d.x < enemy.x and enemy.x - d.x < CELL_W * 4.5]
-            if targets:
-                victim = max(targets, key=lambda defender: defender.x)
-                for vertical in (-11, 9):
-                    self.projectiles.append(Projectile(enemy.x - 14, enemy.y + vertical - 24, victim, victim.x, victim.y - 24, 10 + self.wave, "enemy_bullet", enemy, 0, False, 0.32))
-            self.announce("Comandante: escolta próxima acelerada e rajada dupla disparada.", 1.9, RED)
-        elif boss_type == "alfa":
-            targets = [d for d in self.defenders if d.row == enemy.row and d.x < enemy.x and enemy.x - d.x < CELL_W * 4.0]
-            for victim in sorted(targets, key=lambda defender: defender.x, reverse=True)[:1]:
-                self.projectiles.append(Projectile(enemy.x - 12, enemy.y - 27, victim, victim.x, victim.y - 18, 10 + self.wave, "acid", enemy, 0, False, 0.45, effect="acid_brief"))
-            self.announce(f"Cuspidor Alfa: saliva corrosiva na faixa {enemy.row + 1}.", 1.8, (150, 232, 112))
-        elif boss_type == "mutante":
-            for defender in self.defenders[:]:
-                if defender.row == enemy.row and abs(defender.x - enemy.x) < CELL_W * 2.15:
-                    self.damage_defender(defender, 12)
-                    defender.stun = max(defender.stun, 1.0)
-            self.announce(f"Mutante: punho de ruína na faixa {enemy.row + 1}.", 1.8, RED)
-        elif boss_type == "necromante":
-            self.enemies.append(Enemy("necromante_minion", enemy.row, ENEMIES["necromante_minion"], self.region, self.wave, x=enemy.x + 42))
-            for other in self.enemies:
-                if other is not enemy and abs(other.x - enemy.x) < CELL_W * 1.65:
-                    other.hp = min(other.max_hp, other.hp + 28)
-            self.announce("Necromante: novas múmias e cura localizada da escolta.", 2.0, (197, 128, 238))
-        elif boss_type == "colosso":
-            targets = [d for d in self.defenders if d.x < enemy.x and enemy.x - d.x < CELL_W * 4.0]
-            if targets:
-                victim = max(targets, key=lambda defender: defender.x)
-                self.projectiles.append(Projectile(enemy.x - 12, enemy.y - 34, victim, victim.x, victim.y - 24, 18, "mortar", enemy, 0, False, 0.52))
-            self.announce("Colosso: rocha arremessada contra uma faixa-alvo.", 1.9, RED)
-        elif boss_type == "tide":
-            targets = [d for d in self.defenders if d.row == enemy.row and d.stats.get("water_only") and d.x < enemy.x]
-            if targets:
-                victim = max(targets, key=lambda defender: defender.x)
-                self.damage_defender(victim, 12)
-                victim.stun = max(victim.stun, 0.8)
-            self.announce("Bruto da Maré: golpe concentrado no canal.", 1.8, (95, 195, 239))
-        elif boss_type == "hunter":
-            enemy.x = max(BOARD.left + CELL_W * 3.4, enemy.x - CELL_W * 0.85)
-            targets = [d for d in self.defenders if d.row == enemy.row and d.stats.get("water_only") and d.x < enemy.x]
-            if targets:
-                victim = max(targets, key=lambda defender: defender.x)
-                self.damage_defender(victim, 10)
-                victim.stun = max(victim.stun, 0.7)
-            self.announce("Caçador Abissal: mergulho ofensivo no canal.", 1.8, (95, 195, 239))
-        elif boss_type == "leviathan":
-            targets = [d for d in self.defenders if d.row == enemy.row and d.stats.get("water_only") and d.x < enemy.x]
-            if targets:
-                victim = max(targets, key=lambda defender: defender.x)
-                self.projectiles.append(Projectile(enemy.x - 22, enemy.y - 25, victim, victim.x, victim.y - 12, 24, "torpedo", enemy, 0, False, 0.42))
-            self.announce("LEVIATÃ: jato de pressão concentrado na faixa de água.", 2.0, (95, 195, 239))
-
-    def enemy_special(self, enemy: Enemy) -> None:
-        if enemy.is_boss:
-            self.boss_skill(enemy)
-            return
-        enemy.skill_timer = random.uniform(3.4, 5.8)
-        if "gun" in enemy.tags:
-            targets = [d for d in self.defenders if d.row == enemy.row and d.x < enemy.x and enemy.x - d.x < CELL_W * 4]
-            if targets:
-                victim = max(targets, key=lambda d: d.x)
-                self.projectiles.append(Projectile(enemy.x - 12, enemy.y - 25, victim, victim.x, victim.y - 20, 20 + self.wave * 1.3, "enemy_bullet", enemy, 0, False, 0.30))
-        if "acid" in enemy.tags:
-            targets = [d for d in self.defenders if d.row == enemy.row and d.x < enemy.x and enemy.x - d.x < CELL_W * 3.2]
-            if targets:
-                victim = max(targets, key=lambda d: d.x)
-                self.projectiles.append(Projectile(enemy.x - 12, enemy.y - 22, victim, victim.x, victim.y - 18, 16 + self.wave, "acid", enemy, CELL_W * 0.34, False, 0.48, effect="acid"))
-        if "scream" in enemy.tags:
-            for other in self.enemies:
-                if other.row == enemy.row and abs(other.x - enemy.x) < CELL_W * 2.6:
-                    other.rage = max(other.rage, 3.5)
-            if random.random() < 0.36:
-                self.enemies.append(Enemy("caminhante" if self.region != "beach" else "boia", enemy.row, ENEMIES["caminhante" if self.region != "beach" else "boia"], self.region, self.wave, x=BOARD.right + 20))
-            self.announce("Grito: a horda ganhou velocidade.", 1.2, RED)
-        if "heal" in enemy.tags:
-            nearby = [other for other in self.enemies if other is not enemy and abs(other.x - enemy.x) < CELL_W * 1.8]
-            for other in nearby:
-                other.hp = min(other.max_hp, other.hp + 42)
-            if self.dead_history and not enemy.revived and random.random() < 0.4:
-                key, row, x = self.dead_history[-1]
-                if key in ENEMIES:
-                    revived = Enemy(key, row, ENEMIES[key], self.region, self.wave, x=x + 42)
-                    revived.hp = revived.max_hp * 0.40
-                    self.enemies.append(revived)
-                    enemy.revived = True
-        if "parasite" in enemy.tags:
-            for defender in self.defenders:
-                if defender.row == enemy.row and defender.x < enemy.x and enemy.x - defender.x < CELL_W * 2.1:
-                    defender.stun = max(defender.stun, 2.6)
-            self.announce("Parasita: tiro das tropas foi desabilitado.", 1.4, RED)
-        if "stomp" in enemy.tags:
-            for defender in self.defenders:
-                if defender.row == enemy.row and abs(defender.x - enemy.x) < CELL_W * 1.8:
-                    self.damage_defender(defender, 24, "stun")
-        if "steal" in enemy.tags:
-            stolen = min(18, self.supplies)
-            self.supplies -= stolen
-            enemy.stolen += stolen
-            self.announce("Ladrão de Suprimentos roubou carga — clique nele!", 2.0, GOLD)
-
-    def update_enemies(self, dt: float) -> None:
-        for enemy in self.enemies[:]:
-            enemy.age += dt
-            enemy.attack_timer -= dt
-            enemy.skill_timer -= dt
-            enemy.stun = max(0.0, enemy.stun - dt)
-            enemy.burn = max(0.0, enemy.burn - dt)
-            enemy.corrosion = max(0.0, enemy.corrosion - dt)
-            enemy.rage = max(0.0, enemy.rage - dt)
-            enemy.step_timer -= dt
-            if enemy.burn > 0:
-                self.take_enemy_damage(enemy, 5.2 * dt, "flame")
-                if enemy not in self.enemies:
-                    continue
-            if enemy.corrosion > 0:
-                self.take_enemy_damage(enemy, 2.0 * dt, "acid")
-                if enemy not in self.enemies:
-                    continue
-            if enemy.skill_timer <= 0:
-                self.enemy_special(enemy)
-                if enemy not in self.enemies:
-                    continue
-            if enemy.stun > 0:
-                continue
-            speed = float(enemy.data["speed"]) * (1.55 if enemy.rage > 0 else 1.0)
-            if "dash" in enemy.tags and enemy.age < 1.7:
-                speed *= 1.95
-            if "dig" in enemy.tags and not enemy.burrowed and enemy.age > 1.1:
-                victims = [d for d in self.defenders if d.row == enemy.row]
-                if victims:
-                    victim = max(victims, key=lambda d: d.x)
-                    enemy.x = victim.x + 48
-                    self.damage_defender(victim, 46, "stun")
-                    enemy.burrowed = True
-                    self.explosion(enemy.x, enemy.y, (194, 160, 77), 16)
-            blocker = self.blocker_for(enemy)
-            if blocker:
-                if "jump" in enemy.tags and not enemy.jump_used:
-                    enemy.x = max(BOARD.left + 8, blocker.x - 60)
-                    enemy.jump_used = True
-                    self.announce("Saltador ultrapassou a linha de frente!", 1.4, RED)
-                    continue
-                if enemy.attack_timer <= 0:
-                    scale = boss_damage_scale(self.wave) if enemy.is_boss else enemy_damage_scale(self.wave)
-                    damage = float(enemy.data["damage"]) * scale
-                    self.damage_defender(blocker, damage)
-                    enemy.attack_timer = float(enemy.data["attack"])
-                continue
-            enemy.x -= speed * dt
-            if enemy.step_timer <= 0:
-                water_step = self.region == "beach" and enemy.row in self.water_rows
-                step_color = (112, 221, 235) if water_step else ((208, 177, 105) if self.region == "desert" else (124, 136, 138))
-                for _ in range(2 if water_step else 1):
-                    self.particles.append(
-                        Particle(
-                            enemy.x + random.uniform(-14, 12),
-                            enemy.y + 18,
-                            random.uniform(-16, 16),
-                            random.uniform(-18, -4),
-                            0.30,
-                            random.uniform(1.8, 3.3),
-                            step_color,
-                            22 if not water_step else 0,
-                        )
-                    )
-                enemy.step_timer = 0.18 if "dash" in enemy.tags and enemy.age < 1.7 else 0.34
-            if enemy.x <= BOARD.left + 8:
-                cart = self.lane_bombs[enemy.row]
-                if cart.state == "armed":
-                    self.trigger_lane_bomb(enemy.row)
-                if cart.state == "rolling":
-                    # O zumbi é segurado por um instante na saída, dando ao
-                    # carrinho tempo para alcançá-lo visualmente na faixa.
-                    enemy.x = max(enemy.x, BOARD.left - 2)
-                    continue
-            if enemy.x < BOARD.left - 42:
-                self.lost = True
-                self.finished = True
-                self.announce("BASE INVADIDA", 10, RED)
-
-    def update_projectiles(self, dt: float) -> None:
-        for projectile in self.projectiles[:]:
-            projectile.elapsed += dt
-            t = clamp(projectile.elapsed / projectile.travel, 0, 1)
-            current_x = lerp(projectile.x, projectile.target_x, t)
-            current_y = lerp(projectile.y, projectile.target_y, t) - (math.sin(t * math.pi) * 46 if projectile.kind in {"grenade", "mortar", "bazooka"} else 0)
-            if random.random() < dt * 50:
-                color = GOLD if projectile.friendly else (119, 224, 96)
-                self.particles.append(Particle(current_x, current_y, random.uniform(-20, 20), random.uniform(-20, 20), 0.25, 2.2, color))
-            if t < 1:
-                continue
-            self.projectiles.remove(projectile)
-            if projectile.friendly:
-                target = projectile.target
-                if isinstance(target, Enemy) and target in self.enemies:
-                    self.take_enemy_damage(target, projectile.damage, projectile.effect, projectile.owner if isinstance(projectile.owner, Defender) else None)
-                    if projectile.radius > 0:
-                        for other in self.enemies[:]:
-                            if other is target:
-                                continue
-                            if abs(other.y - target.y) < CELL_H * 0.75 and abs(other.x - target.x) < projectile.radius:
-                                self.take_enemy_damage(other, projectile.damage * 0.72, projectile.effect, projectile.owner if isinstance(projectile.owner, Defender) else None)
-                    if projectile.kind in {"grenade", "mortar", "bazooka", "torpedo"}:
-                        self.explosion(projectile.target_x, projectile.target_y, GOLD, 16)
-            else:
-                target = projectile.target
-                if isinstance(target, Defender) and target in self.defenders:
-                    self.damage_defender(target, projectile.damage, projectile.effect)
-                    if projectile.radius:
-                        for other in self.defenders[:]:
-                            if other is target:
-                                continue
-                            if abs(other.y - target.y) < CELL_H * 0.75 and abs(other.x - target.x) < projectile.radius:
-                                self.damage_defender(other, projectile.damage * 0.5, projectile.effect)
-                    self.explosion(projectile.target_x, projectile.target_y, (106, 219, 91), 10)
-
-    def update_particles(self, dt: float) -> None:
-        for particle in self.particles[:]:
-            particle.ttl -= dt
-            particle.x += particle.vx * dt
-            particle.y += particle.vy * dt
-            particle.vy += particle.gravity * dt
-            if particle.ttl <= 0:
-                self.particles.remove(particle)
-        for text in self.texts[:]:
-            text.ttl -= dt
-            text.y -= 20 * dt
-            if text.ttl <= 0:
-                self.texts.remove(text)
-
-    def update_wave(self, dt: float) -> None:
-        if self.finished:
-            return
-        if not self.started_wave:
-            self.intermission -= dt
-            if self.intermission <= 0:
-                self.start_next_wave()
-            return
-        if self.orders:
-            self.spawn_timer -= dt
-            if self.spawn_timer <= 0:
-                # O alerta grande pertence à chegada do chefe, e não ao início
-                # genérico da onda. Enquanto ele está visível, a ordem fica
-                # segurada; terminado o aviso, o chefe entra de fato.
-                next_order = self.orders[0]
-                if next_order.boss:
-                    if not self.boss_alert_pending:
-                        boss_data = BOSSES[next_order.key]
-                        self.boss_alert_pending = True
-                        self.boss_warning = 3.0
-                        self.boss_banner_name = str(boss_data["name"])
-                        self.boss_banner_subtitle = "CHEFE E ESCOLTA EM APROXIMAÇÃO"
-                        self.announce(f"ALERTA: {self.boss_banner_name} chegando!", 3.0, RED)
-                        return
-                    if self.boss_warning > 0:
-                        return
-                    self.boss_alert_pending = False
-                order = self.orders.pop(0)
-                self.spawn_enemy(order)
-                self.spawn_timer = order.wait
-        elif not self.enemies:
-            if self.wave >= 15:
-                self.finished = True
-                self.victory = True
-                self.announce("REGIÃO PROTEGIDA!", 10, GOLD)
-                return
-            self.started_wave = False
-            self.intermission = 5.0
-            self.supplies += 10 + self.wave
-            self.announce(f"Onda {self.wave} concluída. Prepare a próxima.", 2.4, GOLD)
-
-    def update(self, dt: float) -> None:
-        # Pausa congela relógios, recargas, projéteis, inimigos e contagens. A
-        # interface continua recebendo clique para MENU ou para retomar.
-        if self.paused:
-            return
-        self.ambient_phase += dt
-        self.shake = max(0, self.shake - dt)
-        self.global_toxic = max(0, self.global_toxic - dt)
-        self.boss_warning = max(0, self.boss_warning - dt)
-        self.message_timer = max(0, self.message_timer - dt)
-        for index, value in enumerate(self.card_cooldowns):
-            self.card_cooldowns[index] = max(0, value - dt)
-        self.update_wave(dt)
-        self.update_defenders(dt)
-        self.update_enemies(dt)
-        self.update_lane_bombs(dt)
-        self.update_projectiles(dt)
-        self.update_particles(dt)
-
-    def enemy_at(self, pos: tuple[int, int]) -> Enemy | None:
-        for enemy in reversed(self.enemies):
-            if enemy.hitbox().inflate(16, 16).collidepoint(pos):
-                return enemy
-        return None
-
-    def click_enemy(self, enemy: Enemy) -> bool:
-        if "steal" not in enemy.tags:
-            return False
-        returned = int(enemy.stolen) + 28
-        self.supplies += returned
-        self.announce(f"Carga recuperada: +{returned} suprimentos!", 2.0, GOLD)
-        self.kill_enemy(enemy)
-        return True
-
-    def handle_click(self, pos: tuple[int, int]) -> None:
-        if self.finished:
-            return
-        if self.menu_rect().collidepoint(pos):
-            self.app.leave_battle_to_title()
-            return
-        if self.pause_rect().collidepoint(pos):
-            self.paused = not self.paused
-            self.announce("Partida pausada." if self.paused else "Partida retomada.", 1.5, GOLD)
-            return
-        if self.paused:
-            return
-        if self.remove_rect().collidepoint(pos):
-            self.remove_mode = not self.remove_mode
-            self.use_core = False
-            self.announce("Ferramenta de remoção ativada: clique em uma defesa." if self.remove_mode else "Ferramenta de remoção desativada.", 1.8, TEAL)
-            return
-        if self.next_wave_rect().collidepoint(pos):
-            if not self.started_wave:
-                self.intermission = 0
-                self.start_next_wave()
-            else:
-                self.announce("A horda atual ainda está em andamento.", 1.3, GRAY)
-            return
-        thief = self.enemy_at(pos)
-        if thief and self.click_enemy(thief):
-            return
-        for index, rect in enumerate(self.card_rects()):
-            if rect.collidepoint(pos):
-                if self.card_cooldowns[index] <= 0:
-                    self.selected_card = index
-                    self.use_core = False
-                    self.remove_mode = False
-                return
-        if self.core_rect().collidepoint(pos):
-            if self.cores > 0:
-                self.use_core = not self.use_core
-                self.remove_mode = False
-                self.announce("Clique em uma defesa para ascensioná-la." if self.use_core else "Núcleo cancelado.", 1.5, GOLD)
-            else:
-                self.announce("Derrote um chefe para receber um Núcleo.", 1.6, GRAY)
-            return
-        cell = self.board_cell_at(pos)
-        if cell:
-            row, col = cell
-            if self.use_core:
-                self.apply_core(row, col)
-            elif self.remove_mode:
-                self.remove_defender(row, col)
-            else:
-                self.place(row, col)
-
-    def card_rects(self) -> list[pygame.Rect]:
-        count = len(self.selected)
-        width = min(138, (WIDTH - 185) // max(1, count))
-        return [pygame.Rect(10 + index * width, 8, width - 5, 102) for index in range(count)]
+class Pickup:
+    x: float
+    y: float
+    amount: int
+    life: float = 7
+    drift: float = 0
 
 
 class Game:
-    def __init__(self) -> None:
+    def __init__(self):
         pygame.init()
-        pygame.display.set_caption(f"Soldados vs Zumbis — Reconstrução v{VERSION}")
+        pygame.display.set_caption("Soldados vs Zumbis")
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
-        self.fonts = FontBook()
-        self.assets = Assets()
+        self.fonts = {
+            "tiny": pygame.font.SysFont("arial", 12, bold=True),
+            "small": pygame.font.SysFont("arial", 15, bold=True),
+            "body": pygame.font.SysFont("arial", 19),
+            "med": pygame.font.SysFont("arial", 24, bold=True),
+            "large": pygame.font.SysFont("arial", 42, bold=True),
+            "title": pygame.font.SysFont("impact", 64),
+        }
+        self.rng = random.Random()
         self.running = True
         self.scene = "loading"
-        self.scene_elapsed = 0.0
-        self.save = load_save()
-        self.region = "city"
-        self.selection: list[tuple[str, str]] = []
-        self.battle: Battle | None = None
+        self.loading_elapsed = 0.0
+        # Assets are intentionally loaded after the window is visible. The
+        # old opening only animated a progress bar after every image had
+        # already been read from disk; this queue keeps the menu responsive
+        # and leaves the battle with its resources in memory.
+        self.loading_duration = 1.25
+        self.loading_total = 0
+        self.loading_completed = 0
+        self.loading_status = "Inicializando posto de comando"
+        self.assets_ready = False
+        self.toast = ""
+        self.toast_timer = 0.0
+        self.time = 0.0
+        self.progress = self.load_progress()
+        self.stage = 0
+        self.selection: list[str] = []
+        self.selected_card: str | None = None
+        self.card_cooldowns: dict[str, float] = {}
+        self.remove_mode = False
+        self.paused = False
+        self.end_state: str | None = None
+        self.defenders: list[Defender] = []
+        self.zombies: list[Zombie] = []
+        self.projectiles: list[Projectile] = []
+        self.particles: list[Particle] = []
+        self.effects: list[Effect] = []
+        self.pickups: list[Pickup] = []
+        self.supplies = STARTING_SUPPLIES[0]
+        self.row_mines: list[bool] = [True] * ROWS
+        self.defeat_reason = ""
+        self.wave = 0
+        self.total_waves = len(WAVE_PROFILES)
+        self.wave_profile = WAVE_PROFILES[0]
+        self.kills = 0
+        self.medals = 0
+        self.bosses_defeated = 0
+        self.queue: list[tuple[str, str | None]] = []
+        self.spawn_timer = 0
+        self.intermission = 0
+        self.pickup_timer = 5
+        self.banner = 0
         self.dossier_kind = "units"
         self.dossier_page = 0
-        self.hover_card: tuple[str, str] | None = None
+        self.dossier_key: str | None = None
+        self.assets = self.empty_asset_store()
+        self.ground_layers: dict[str, pygame.Surface] = {}
+        self.loading_jobs = self.build_loading_jobs()
+        self.loading_total = len(self.loading_jobs)
 
-    def run(self) -> None:
-        while self.running:
-            dt = min(0.05, self.clock.tick(FPS) / 1000.0)
-            self.scene_elapsed += dt
-            self.handle_events()
-            self.update(dt)
-            self.draw()
-            pygame.display.flip()
-        pygame.quit()
+    def load_progress(self) -> int:
+        try:
+            with open(SAVE_FILE, "r", encoding="utf-8") as file:
+                return max(1, min(len(MISSIONS), int(json.load(file).get("unlocked", 1))))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return 1
 
-    def update(self, dt: float) -> None:
-        if self.scene == "loading":
-            self.assets.load_next()
-            if self.assets.complete:
-                self.scene = "title"
-                self.scene_elapsed = 0
-        elif self.scene == "battle" and self.battle:
-            self.battle.update(dt)
+    def save_progress(self):
+        with open(SAVE_FILE, "w", encoding="utf-8") as file:
+            json.dump({"unlocked": self.progress}, file, ensure_ascii=False, indent=2)
 
-    def handle_events(self) -> None:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
-                self.handle_key(event.key)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self.handle_click(event.pos)
-            elif event.type == pygame.MOUSEMOTION:
-                self.hover_card = None
-                if self.scene == "select":
-                    for key, display, rect in self.selection_cards():
-                        if rect.collidepoint(event.pos):
-                            self.hover_card = (key, display)
+    def empty_asset_store(self) -> dict[str, Any]:
+        """Return the in-memory cache before the loading screen starts."""
+        return {
+            "opening": None,
+            "units": {},
+            "zombies": {},
+            "regional_units": {},
+            "regional_zombies": {},
+            "terrain": {},
+            "scenes": {},
+            "props": {},
+            "effects": {},
+        }
 
-    def handle_key(self, key: int) -> None:
-        if key == pygame.K_ESCAPE:
-            if self.scene == "title":
-                self.running = False
-            elif self.scene == "battle":
-                self.leave_battle_to_title()
-            else:
-                self.scene = "title"
-            return
-        if self.scene == "title" and key in (pygame.K_RETURN, pygame.K_SPACE):
-            self.scene = "campaign"
-        elif self.scene == "campaign" and key in (pygame.K_1, pygame.K_2, pygame.K_3):
-            target = ("city", "desert", "beach")[key - pygame.K_1]
-            self.enter_selection(target)
-        elif self.scene == "battle" and self.battle:
-            if pygame.K_1 <= key <= pygame.K_8:
-                choice = key - pygame.K_1
-                if choice < len(self.battle.selected):
-                    self.battle.selected_card = choice
-                    self.battle.use_core = False
-                    self.battle.remove_mode = False
-            elif key == pygame.K_e:
-                if self.battle.cores:
-                    self.battle.use_core = not self.battle.use_core
-                    self.battle.remove_mode = False
-            elif key == pygame.K_r:
-                self.battle.remove_mode = not self.battle.remove_mode
-                self.battle.use_core = False
-                self.battle.announce("Ferramenta de remoção ativada." if self.battle.remove_mode else "Ferramenta de remoção desativada.", 1.4, TEAL)
-            elif key == pygame.K_p:
-                self.battle.paused = not self.battle.paused
-                self.battle.announce("Partida pausada." if self.battle.paused else "Partida retomada.", 1.4, GOLD)
-            elif key == pygame.K_SPACE and not self.battle.started_wave:
-                self.battle.intermission = 0
-                self.battle.start_next_wave()
-            elif self.battle.finished and key == pygame.K_RETURN:
-                self.finish_battle()
+    def fullscreen_image(self, path: str) -> pygame.Surface | None:
+        try:
+            source = pygame.image.load(path).convert()
+            return pygame.transform.smoothscale(source, (WIDTH, HEIGHT))
+        except (pygame.error, FileNotFoundError):
+            return None
 
-    def handle_click(self, pos: tuple[int, int]) -> None:
-        if self.scene == "loading":
-            return
-        if self.scene == "title":
-            self.click_title(pos)
-        elif self.scene == "campaign":
-            self.click_campaign(pos)
-        elif self.scene == "select":
-            self.click_selection(pos)
-        elif self.scene.startswith("dossier"):
-            self.click_dossier(pos)
-        elif self.scene == "howto":
-            if self.button_rect("Voltar", 50, 645, 170, 46).collidepoint(pos):
-                self.scene = "title"
-        elif self.scene == "battle" and self.battle:
-            if self.battle.finished:
-                if pygame.Rect(WIDTH // 2 - 145, HEIGHT // 2 + 100, 290, 50).collidepoint(pos):
-                    self.finish_battle()
-            else:
-                self.battle.handle_click(pos)
+    def build_loading_jobs(self) -> list[tuple[str, Any]]:
+        """Build one small loading task per visual resource.
 
-    def title_buttons(self) -> list[tuple[str, pygame.Rect]]:
-        return [
-            ("JOGAR CAMPANHA", pygame.Rect(62, 282, 274, 54)),
-            ("COMO JOGAR", pygame.Rect(62, 348, 274, 48)),
-            ("SOLDADOS", pygame.Rect(62, 408, 130, 46)),
-            ("ZUMBIS", pygame.Rect(206, 408, 130, 46)),
-            ("SAIR", pygame.Rect(62, 468, 274, 42)),
-        ]
-
-    def click_title(self, pos: tuple[int, int]) -> None:
-        for label, rect in self.title_buttons():
-            if not rect.collidepoint(pos):
-                continue
-            if label == "JOGAR CAMPANHA":
-                self.scene = "campaign"
-            elif label == "COMO JOGAR":
-                self.scene = "howto"
-            elif label == "SOLDADOS":
-                self.scene, self.dossier_kind, self.dossier_page = "dossier_units", "units", 0
-            elif label == "ZUMBIS":
-                self.scene, self.dossier_kind, self.dossier_page = "dossier_zombies", "zombies", 0
-            elif label == "SAIR":
-                self.running = False
-
-    def click_campaign(self, pos: tuple[int, int]) -> None:
-        for index, region in enumerate(("city", "desert", "beach")):
-            rect = pygame.Rect(72 + index * 402, 182, 360, 350)
-            if rect.collidepoint(pos):
-                self.enter_selection(region)
-                return
-        if self.button_rect("Voltar", 50, 645, 170, 46).collidepoint(pos):
-            self.scene = "title"
-
-    def enter_selection(self, region: str) -> None:
-        self.region = region
-        roster = REGION_ROSTERS[region]
-        # A seleção começa com oito opções equilibradas, mas é inteiramente livre.
-        starting_keys = {item[0] for item in roster[:8]}
-        self.selection = [item for item in roster if item[0] in starting_keys][:8]
-        self.scene = "select"
-
-    def selection_cards(self) -> list[tuple[str, str, pygame.Rect]]:
-        """Organiza pares de evolução em duas fileiras explícitas.
-
-        Em cada bloco, N1 ocupa a faixa de cima e a sua N2 fica exatamente
-        abaixo, na mesma coluna. Assim o jogador vê que são duas cartas e não
-        a mesma arte repetida. As cartas aquáticas e o Sargento ficam nos
-        espaços especiais restantes do segundo bloco.
+        Jobs run from the update loop after a first loading frame has been
+        drawn. That makes the loading screen truthful: it is visible while
+        resources are prepared and combat does not need to reopen image files.
         """
-        cards: list[tuple[str, str, pygame.Rect]] = []
-        names = {key: display for key, display in REGION_ROSTERS[self.region]}
-        for pair_index, (level_one, level_two) in enumerate(PROMOTIONS.items()):
-            block, col = divmod(pair_index, 7)
-            for level_offset, key in enumerate((level_one, level_two)):
-                display = names.get(key, str(DEFENSES[key]["base"]))
-                row = block * 2 + level_offset
-                rect = pygame.Rect(44 + col * 174, 100 + row * 126, 154, 116)
-                cards.append((key, display, rect))
-        for index, key in enumerate(("lancha", "submarino", "bomba_agua", "instrutor")):
-            row = 2 if index < 3 else 3
-            col = 4 + (index % 3)
-            display = names.get(key, str(DEFENSES[key]["base"]))
-            rect = pygame.Rect(44 + col * 174, 100 + row * 126, 154, 116)
-            cards.append((key, display, rect))
-        return cards
+        jobs: list[tuple[str, Any]] = []
 
-    def click_selection(self, pos: tuple[int, int]) -> None:
-        for key, display, rect in self.selection_cards():
-            if not rect.collidepoint(pos):
-                continue
-            item = (key, display)
-            if item in self.selection:
-                self.selection.remove(item)
-            elif len(self.selection) < 8:
-                self.selection.append(item)
-            return
-        launch = pygame.Rect(WIDTH - 290, 650, 240, 46)
-        if launch.collidepoint(pos):
-            if len(self.selection) == 8:
-                self.battle = Battle(self, self.region, self.selection[:])
-                self.scene = "battle"
-            else:
-                return
-        if self.button_rect("Voltar", 45, 650, 160, 46).collidepoint(pos):
-            self.scene = "campaign"
+        def load_opening():
+            path = os.path.join(ASSET_DIR, "hd", "ui", "abertura_urbana_v6.png")
+            self.assets["opening"] = self.fullscreen_image(path)
 
-    def dossier_items(self) -> list[dict]:
-        if self.dossier_kind == "units":
-            items = [
-                {"kind": "evolution", "l1": l1, "l2": l2}
-                for l1, l2 in PROMOTIONS.items()
-            ]
-            items.append({"kind": "promoter", "key": "instrutor"})
-            return items
-        return [
-            {"name": data["name"], "sub": "Chefe" if key in BOSSES else "Inimigo", "ability": data["ability"], "hp": int(data["hp"]), "key": key}
-            for key, data in {**ENEMIES, **BOSSES}.items()
-        ]
+        jobs.append(("Arte de abertura urbana", load_opening))
 
-    def click_dossier(self, pos: tuple[int, int]) -> None:
-        if self.button_rect("Voltar", 40, 648, 160, 42).collidepoint(pos):
-            self.scene = "title"
-            return
-        if pygame.Rect(WIDTH - 180, 648, 140, 42).collidepoint(pos):
-            items = self.dossier_items()
-            pages = max(1, math.ceil(len(items) / 6))
-            self.dossier_page = (self.dossier_page + 1) % pages
+        for key in UNIT_DATA:
+            asset_key = UNIT_ASSET_KEYS.get(key, key)
 
-    def finish_battle(self) -> None:
-        if not self.battle:
-            self.scene = "campaign"
-            return
-        if self.battle.victory:
-            region = self.battle.region
-            if region not in self.save["completed"]:
-                self.save["completed"].append(region)
-            self.save["unlocked"] = list(REGIONS)
-            self.save["best_wave"][region] = max(self.save["best_wave"].get(region, 0), 15)
-            save_campaign(self.save)
-        self.battle = None
-        self.scene = "campaign"
+            def load_unit(key=key, asset_key=asset_key):
+                hd_path = os.path.join(ASSET_DIR, "hd", "units", f"{asset_key}.png")
+                path = hd_path if os.path.exists(hd_path) else os.path.join(ASSET_DIR, "units", f"{asset_key}.png")
+                self.assets["units"][key] = self.safe_image(path, UNIT_DRAW_SIZES[key], UNIT_DATA[key]["color"])
 
-    def leave_battle_to_title(self) -> None:
-        """Saída voluntária sem registrar vitória, derrota ou progresso falso."""
-        self.battle = None
-        self.scene = "title"
-        self.scene_elapsed = 0.0
+            jobs.append((f"Soldado: {UNIT_DATA[key]['label']}", load_unit))
 
-    def button_rect(self, label: str, x: int, y: int, w: int, h: int) -> pygame.Rect:
-        return pygame.Rect(x, y, w, h)
+        for key in ZOMBIE_DATA:
 
-    def draw_text(self, text: str, font: pygame.font.Font, color: tuple[int, int, int], pos: tuple[float, float], anchor: str = "topleft", shadow: bool = False) -> pygame.Rect:
-        surface = font.render(text, True, color)
-        rect = surface.get_rect()
-        setattr(rect, anchor, (int(pos[0]), int(pos[1])))
-        if shadow:
-            shadow_surface = font.render(text, True, (0, 0, 0))
-            shadow_rect = shadow_surface.get_rect()
-            setattr(shadow_rect, anchor, (int(pos[0] + 2), int(pos[1] + 2)))
-            self.screen.blit(shadow_surface, shadow_rect)
-        self.screen.blit(surface, rect)
-        return rect
+            def load_zombie(key=key):
+                hd_path = os.path.join(ASSET_DIR, "hd", "zombies", f"{key}.png")
+                path = hd_path if os.path.exists(hd_path) else os.path.join(ASSET_DIR, "zombies", f"{key}.png")
+                self.assets["zombies"][key] = self.safe_image(path, ZOMBIE_DRAW_SIZES[key], ZOMBIE_DATA[key]["color"])
 
-    def panel(self, rect: pygame.Rect, alpha: int = 210, border: tuple[int, int, int] = (91, 106, 112), radius: int = 10) -> None:
-        surface = pygame.Surface(rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(surface, (12, 20, 25, alpha), surface.get_rect(), border_radius=radius)
-        pygame.draw.rect(surface, (*border, min(255, alpha + 25)), surface.get_rect(), width=2, border_radius=radius)
-        self.screen.blit(surface, rect)
+            jobs.append((f"Ameaça: {ZOMBIE_DATA[key]['label']}", load_zombie))
 
-    def button(self, label: str, rect: pygame.Rect, accent: tuple[int, int, int], enabled: bool = True) -> None:
-        hover = rect.collidepoint(pygame.mouse.get_pos()) and enabled
-        outer = tuple(min(255, c + 25) for c in accent) if hover else accent
-        color = outer if enabled else (67, 73, 76)
-        pygame.draw.rect(self.screen, (8, 13, 17), rect.inflate(4, 4), border_radius=8)
-        pygame.draw.rect(self.screen, color, rect, border_radius=7)
-        pygame.draw.rect(self.screen, (228, 235, 228), rect, width=1, border_radius=7)
-        self.draw_text(label, self.fonts.h2, INK if enabled else GRAY, rect.center, "center")
+        for key, variants in REGIONAL_UNIT_ASSETS.items():
+            for code, asset_key in variants.items():
 
-    def draw_loading(self) -> None:
-        self.screen.fill((8, 13, 18))
-        progress = self.assets.loaded / max(1, self.assets.total)
-        pygame.draw.circle(self.screen, (39, 62, 72), (WIDTH // 2, 268), 92)
-        pygame.draw.circle(self.screen, GOLD, (WIDTH // 2, 268), 92, 4)
-        self.draw_text("SOLDADOS VS ZUMBIS", self.fonts.title, WHITE, (WIDTH / 2, 150), "center", True)
-        self.draw_text(f"RECONSTRUÇÃO V{VERSION}", self.fonts.h2, GOLD, (WIDTH / 2, 202), "center")
-        bar = pygame.Rect(WIDTH // 2 - 240, 390, 480, 18)
-        pygame.draw.rect(self.screen, (31, 42, 47), bar, border_radius=9)
-        pygame.draw.rect(self.screen, TEAL, (bar.x, bar.y, int(bar.width * progress), bar.height), border_radius=9)
-        self.draw_text(f"Preparando artes e animações  {self.assets.loaded}/{self.assets.total}", self.fonts.body, WHITE, (WIDTH / 2, 425), "center")
-        self.draw_text("Carregamento antecipado: a partida não precisa travar para buscar as artes.", self.fonts.small, GRAY, (WIDTH / 2, 463), "center")
-        if self.assets.error:
-            self.draw_text(self.assets.error, self.fonts.small, RED, (WIDTH / 2, 510), "center")
+                def load_regional_unit(key=key, code=code, asset_key=asset_key):
+                    path = os.path.join(ASSET_DIR, "hd", "units", f"{asset_key}.png")
+                    self.assets["regional_units"].setdefault(key, {})[code] = self.safe_image(
+                        path, UNIT_DRAW_SIZES[key], UNIT_DATA[key]["color"]
+                    )
 
-    def draw_title(self) -> None:
-        self.screen.blit(self.assets.images["menu"], (0, 0))
-        tint = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        tint.fill((3, 8, 12, 92))
-        self.screen.blit(tint, (0, 0))
-        self.panel(pygame.Rect(36, 80, 336, 462), 210, (166, 130, 62), 14)
-        self.draw_text("SOLDADOS", self.fonts.title, (242, 239, 218), (62, 108), shadow=True)
-        self.draw_text("VS", self.fonts.small, GOLD, (338, 153), "topright", True)
-        self.draw_text("ZUMBIS", self.fonts.title, (154, 206, 127), (62, 166), shadow=True)
-        self.draw_text("DEFENDA. RECARREGUE. RESISTA.", self.fonts.small, GRAY, (64, 224))
-        for label, rect in self.title_buttons():
-            accent = GOLD if label == "JOGAR CAMPANHA" else (81, 145, 137)
-            self.button(label, rect, accent)
-        self.draw_text(f"v{VERSION} • Cidade • Deserto • Praia", self.fonts.small, WHITE, (40, HEIGHT - 28))
-        self.draw_text("Artes originais • campanha de 15 ondas", self.fonts.small, WHITE, (WIDTH - 36, HEIGHT - 28), "topright")
+                jobs.append((f"Uniforme {code}: {UNIT_DATA[key]['label']}", load_regional_unit))
 
-    def draw_campaign(self) -> None:
-        self.screen.blit(self.assets.images["menu"], (0, 0))
-        veil = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        veil.fill((4, 11, 16, 170))
-        self.screen.blit(veil, (0, 0))
-        self.draw_text("MAPA DA CAMPANHA", self.fonts.title, WHITE, (WIDTH / 2, 38), "center", True)
-        self.draw_text("Escolha livremente Cidade, Deserto ou Praia. Cada região possui 15 ondas e chefes nas ondas 5, 10 e 15.", self.fonts.body, GOLD, (WIDTH / 2, 84), "center")
-        for index, region in enumerate(("city", "desert", "beach")):
-            info = REGIONS[region]
-            rect = pygame.Rect(72 + index * 402, 182, 360, 350)
-            unlocked = True
-            background = self.assets.images[f"{region}_bg"]
-            crop = pygame.Rect(index * 160, 150, 360, 208)
-            image = pygame.Surface((360, 210))
-            image.blit(background, (0, 0), crop)
-            self.screen.blit(image, rect)
-            self.panel(rect, 105 if unlocked else 215, info["accent"] if unlocked else (75, 75, 75), 14)
-            if not unlocked:
-                lock = pygame.Rect(rect.centerx - 28, rect.y + 104, 56, 66)
-                pygame.draw.rect(self.screen, (49, 54, 60), lock, border_radius=9)
-                pygame.draw.arc(self.screen, GRAY, (lock.x + 9, lock.y - 27, 38, 40), 0, math.pi, 5)
-                self.draw_text("BLOQUEADA", self.fonts.h2, GRAY, (rect.centerx, rect.y + 184), "center")
-            else:
-                self.draw_text(info["short"], self.fonts.h1, WHITE, (rect.centerx, rect.y + 222), "center", True)
-                self.draw_text(info["tag"], self.fonts.small, info["accent"], (rect.centerx, rect.y + 252), "center")
-                best = self.save["best_wave"].get(region, 0)
-                status = "REGIÃO PROTEGIDA" if region in self.save["completed"] else f"Melhor: onda {best}/15"
-                self.draw_text(status, self.fonts.small, GOLD if region in self.save["completed"] else WHITE, (rect.centerx, rect.y + 286), "center")
-                self.button("PREPARAR CARTAS", pygame.Rect(rect.x + 55, rect.y + 304, 250, 34), info["accent"])
-        self.button("VOLTAR", self.button_rect("Voltar", 50, 645, 170, 46), (92, 126, 137))
+        for key, variants in REGIONAL_ZOMBIE_ASSETS.items():
+            for code, asset_key in variants.items():
 
-    def draw_selection(self) -> None:
-        region = REGIONS[self.region]
-        self.screen.blit(self.assets.images[f"{self.region}_bg"], (0, 0))
-        shade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        shade.fill((6, 11, 14, 157))
-        self.screen.blit(shade, (0, 0))
-        self.draw_text(f"SELEÇÃO DE CARTAS — {region['name'].upper()}", self.fonts.h1, WHITE, (WIDTH / 2, 22), "center", True)
-        self.draw_text("Escolha 8 cartas. N1 fica sobre N2; cartas de água só cabem no canal da Praia.", self.fonts.small, GOLD, (WIDTH / 2, 55), "center")
-        self.draw_text(f"{len(self.selection)}/8 selecionadas", self.fonts.h2, region["accent"], (WIDTH - 48, 82), "topright")
-        for key, display, rect in self.selection_cards():
-            data = DEFENSES[key]
-            chosen = (key, display) in self.selection
-            self.panel(rect, 230, region["accent"] if chosen else (91, 105, 107), 10)
-            sprite = self.card_sprite(self.region, key, int(data["sprite"]))
-            self.blit_sprite(sprite, rect.x + 6, rect.y + 15, 54, 64)
-            # O rosto da carta é uma ficha curta de decisão. Nome e habilidade
-            # aparecem exclusivamente ao passar o mouse, sem texto duplicado.
-            metric_a, metric_b = self.card_metrics(data)
-            self.draw_text(f"{data['cost']} SUP", self.fonts.small, GOLD, (rect.x + 66, rect.y + 14))
-            self.draw_text(metric_a, self.fonts.tiny, WHITE, (rect.x + 66, rect.y + 38))
-            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "reload", "medic", "promoter"} else (208, 218, 213), (rect.x + 66, rect.y + 55))
-            level = f"N{data['level']}" + (" • ÁGUA" if data.get("water_only") else "")
-            self.draw_text(level, self.fonts.tiny, TEAL if data.get("water_only") else region["accent"], (rect.x + 12, rect.y + 93))
-            self.draw_text(f"HP {int(data['hp'])}", self.fonts.tiny, GRAY, (rect.right - 12, rect.y + 93), "topright")
-            if chosen:
-                self.draw_text("✓", self.fonts.h1, GOLD, (rect.right - 15, rect.y + 10), "topright")
-        self.button("VOLTAR", self.button_rect("Voltar", 45, 650, 160, 46), (98, 126, 137))
-        self.button("INICIAR MISSÃO", pygame.Rect(WIDTH - 290, 650, 240, 46), region["accent"], len(self.selection) == 8)
-        if self.hover_card:
-            key, display = self.hover_card
-            data = DEFENSES[key]
-            tooltip = pygame.Rect(250, 600, 780, 42)
-            self.panel(tooltip, 235, region["accent"], 8)
-            self.draw_text(display, self.fonts.tiny, GOLD, (tooltip.x + 12, tooltip.y + 7))
-            self.draw_wrapped(data["ability"], self.fonts.tiny, WHITE, pygame.Rect(tooltip.x + 126, tooltip.y + 7, tooltip.width - 138, 27), 2)
+                def load_regional_zombie(key=key, code=code, asset_key=asset_key):
+                    path = os.path.join(ASSET_DIR, "hd", "zombies", f"{asset_key}.png")
+                    self.assets["regional_zombies"].setdefault(key, {})[code] = self.safe_image(
+                        path, ZOMBIE_DRAW_SIZES[key], ZOMBIE_DATA[key]["color"]
+                    )
 
-    def draw_howto(self) -> None:
-        self.screen.blit(self.assets.images["menu"], (0, 0))
-        veil = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        veil.fill((4, 10, 14, 186))
-        self.screen.blit(veil, (0, 0))
-        card = pygame.Rect(116, 72, WIDTH - 232, 560)
-        self.panel(card, 238, GOLD, 16)
-        self.draw_text("COMO JOGAR", self.fonts.title, WHITE, (card.centerx, card.y + 30), "center")
-        lines = [
-            ("1. Escolha 8 cartas", "Antes da missão, monte uma equipe. Cada região tem uniformes, armas e funções próprias."),
-            ("2. Posicione por alcance", "As tropas só atacam quando um zumbi entra no alcance de seus blocos. Escopetas seguram perto; snipers cobrem a linha."),
-            ("3. Munição é limitada", "Armas não recarregam sozinhas. Mecânicos e Engenheiros reabastecem tropas próximas; proteja-os."),
-            ("4. Suprimentos e saúde", "Rádio gera créditos. Médicos limpam debuffs ou curam vida, conforme o nível da carta."),
-            ("5. Chefes e N3", "Nas ondas 5, 10 e 15 há chefes. Ao derrubá-los, use N3 em uma defesa para ativar o Nível 3 temporário."),
-            ("6. Comandos e água", "A aba superior reúne MENU, PAUSA, REMOVER, N3 e PRÓXIMA. Cartas aquáticas só entram no canal da Praia."),
-        ]
-        y = card.y + 102
-        for head, body in lines:
-            self.draw_text(head, self.fonts.h2, GOLD, (card.x + 48, y))
-            self.draw_wrapped(body, self.fonts.body, WHITE, pygame.Rect(card.x + 48, y + 27, card.width - 96, 46), 2)
-            y += 76
-        self.button("VOLTAR", self.button_rect("Voltar", 50, 645, 170, 46), (92, 126, 137))
+                jobs.append((f"Variante {code}: {ZOMBIE_DATA[key]['label']}", load_regional_zombie))
 
-    def draw_unit_evolution_dossier(self) -> None:
-        """Mostra a progressão literalmente em duas faixas: N1 sobre N2."""
-        self.screen.blit(self.assets.images["menu"], (0, 0))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((5, 10, 14, 190))
-        self.screen.blit(overlay, (0, 0))
-        accent = REGIONS[self.region]["accent"]
-        self.draw_text("EVOLUÇÃO DOS SOLDADOS", self.fonts.title, WHITE, (WIDTH / 2, 20), "center", True)
-        self.draw_text("N1 em cima • N2 embaixo • N3 é prêmio de chefe • o Sargento promove uma N1 próxima após 90 s", self.fonts.small, accent, (WIDTH / 2, 70), "center")
-        items = self.dossier_items()
-        start = self.dossier_page * 6
-        for index, item in enumerate(items[start:start + 6]):
-            row, col = divmod(index, 3)
-            rect = pygame.Rect(52 + col * 404, 110 + row * 247, 372, 226)
-            self.panel(rect, 238, accent, 12)
-            if item["kind"] == "promoter":
-                data = DEFENSES["instrutor"]
-                sprite = self.card_sprite(self.region, "instrutor", int(data["sprite"]))
-                self.blit_sprite(sprite, rect.x + 18, rect.y + 48, 106, 126)
-                self.draw_text("CARTA DE PROMOÇÃO", self.fonts.tiny, GOLD, (rect.x + 140, rect.y + 25))
-                self.draw_text(data["base"], self.fonts.h2, WHITE, (rect.x + 140, rect.y + 48))
-                self.draw_text(f"Custo {data['cost']} SUP • HP {data['hp']}", self.fonts.tiny, GOLD, (rect.x + 140, rect.y + 78))
-                self.draw_wrapped(data["ability"], self.fonts.small, (219, 229, 225), pygame.Rect(rect.x + 140, rect.y + 104, 210, 74), 4)
-                continue
-            for tier_index, key in enumerate((item["l1"], item["l2"])):
-                data = DEFENSES[key]
-                tier = pygame.Rect(rect.x + 10, rect.y + 27 + tier_index * 96, rect.width - 20, 88)
-                tier_color = (102, 128, 135) if tier_index == 0 else GOLD
-                self.panel(tier, 205, tier_color, 8)
-                sprite = self.card_sprite(self.region, key, int(data["sprite"]))
-                self.blit_sprite(sprite, tier.x + 5, tier.y + 8, 60, 72)
-                self.draw_text(f"N{data['level']}", self.fonts.tiny, tier_color, (tier.x + 74, tier.y + 9), shadow=True)
-                self.draw_text(str(data["base"]), self.fonts.small, WHITE, (tier.x + 103, tier.y + 7))
-                self.draw_text(f"HP {int(data['hp'])} • DANO {int(data['damage'])} • ALC {int(data['range'])}", self.fonts.tiny, GOLD, (tier.x + 74, tier.y + 29))
-                self.draw_wrapped(str(data["ability"]), self.fonts.tiny, (219, 229, 225), pygame.Rect(tier.x + 74, tier.y + 45, tier.width - 84, 34), 2)
-        pages = max(1, math.ceil(len(items) / 6))
-        self.draw_text(f"Página {self.dossier_page + 1}/{pages} • uniforme atual: {REGIONS[self.region]['short'].title()}", self.fonts.small, WHITE, (WIDTH / 2, 664), "center")
-        self.button("VOLTAR", self.button_rect("Voltar", 40, 648, 160, 42), (92, 126, 137))
-        self.button("PRÓXIMA", pygame.Rect(WIDTH - 180, 648, 140, 42), accent)
+        for mission in MISSIONS:
+            code = mission["code"]
 
-    def draw_dossier(self) -> None:
-        is_units = self.dossier_kind == "units"
-        if is_units:
-            self.draw_unit_evolution_dossier()
-            return
-        self.screen.blit(self.assets.images["menu"], (0, 0))
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((5, 10, 14, 190))
-        self.screen.blit(overlay, (0, 0))
-        heading = "INFORMAÇÕES DOS SOLDADOS" if is_units else "INFORMAÇÕES DOS ZUMBIS"
-        accent = TEAL if is_units else (139, 222, 106)
-        self.draw_text(heading, self.fonts.title, WHITE, (WIDTH / 2, 24), "center", True)
-        self.draw_text("As fichas abaixo mostram função, poder e contraponto tático.", self.fonts.body, accent, (WIDTH / 2, 70), "center")
-        items = self.dossier_items()
-        start = self.dossier_page * 6
-        page_items = items[start:start + 6]
-        for index, item in enumerate(page_items):
-            row, col = divmod(index, 3)
-            rect = pygame.Rect(52 + col * 404, 123 + row * 235, 372, 208)
-            self.panel(rect, 236, accent, 12)
-            icon_index = DEFENSES[item["key"]]["sprite"] if is_units else ({**ENEMIES, **BOSSES}[item["key"]]["sprite"])
-            sprite_region = "city" if is_units else ("city" if item["key"] in {"caminhante", "corredor", "rastejante", "conehead", "policial", "militar", "escudo", "cuspidor", "divisor", "gritador", "saltador", "bruto", "bruto_demolidor", "comandante_mortos", "cuspidor_alfa"} else ("desert" if item["key"] in {"digger", "ladrao", "curandeiro", "parasita", "mutante", "necromante_minion", "mutante_ruinas", "necromante", "colosso_mutante"} else "beach"))
-            sprite = self.card_sprite(sprite_region, item["key"], int(icon_index)) if is_units else self.assets.zombie(sprite_region, int(icon_index))
-            self.blit_sprite(sprite, rect.x + 14, rect.y + 44, 105, 118)
-            self.draw_text(item["name"], self.fonts.h2, WHITE, (rect.x + 132, rect.y + 22))
-            self.draw_text(item["sub"], self.fonts.small, accent, (rect.x + 132, rect.y + 51))
-            stat = f"Custo: {item['cost']} SUP • Nível {item['level']}" if is_units else f"Vida base: {item['hp']}"
-            self.draw_text(stat, self.fonts.tiny, GOLD, (rect.x + 132, rect.y + 76))
-            self.draw_wrapped(item["ability"], self.fonts.small, (219, 229, 225), pygame.Rect(rect.x + 132, rect.y + 100, 220, 83), 4)
-        pages = max(1, math.ceil(len(items) / 6))
-        self.draw_text(f"Página {self.dossier_page + 1}/{pages}", self.fonts.small, WHITE, (WIDTH / 2, 664), "center")
-        self.button("VOLTAR", self.button_rect("Voltar", 40, 648, 160, 42), (92, 126, 137))
-        self.button("PRÓXIMA", pygame.Rect(WIDTH - 180, 648, 140, 42), accent)
+            def load_terrain(code=code):
+                path = os.path.join(ASSET_DIR, "terrain", f"{code}.png")
+                self.assets["terrain"][code] = self.safe_image(path, (CELL_W, CELL_H), (80, 120, 70))
 
-    def draw_battle(self) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        background = self.assets.images[f"{battle.region}_bg"]
-        shake_x = int(math.sin(self.scene_elapsed * 55) * 4 * battle.shake)
-        shake_y = int(math.cos(self.scene_elapsed * 37) * 3 * battle.shake)
-        self.screen.blit(background, (shake_x, shake_y))
-        # A área usa faixas de terreno reais. Não há quadrados coloridos: só
-        # limites horizontais discretos onde os pés realmente caminham.
-        ambient = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        if battle.region == "beach":
-            for row in battle.water_rows:
-                water_rect = pygame.Rect(BOARD.left, int(BOARD.top + row * CELL_H), BOARD.width, int(CELL_H))
-                pygame.draw.rect(ambient, (56, 163, 232, 22), water_rect, border_radius=14)
-        if battle.global_toxic > 0:
-            ambient.fill((92, 202, 86, int(30 + battle.global_toxic * 8)))
-        self.screen.blit(ambient, (0, 0))
-        self.draw_lane_guides(battle)
-        self.draw_lane_bombs(battle)
-        self.draw_battle_top()
-        mouse = pygame.mouse.get_pos()
-        hovered_cell = battle.board_cell_at(mouse)
-        if hovered_cell and not battle.finished:
-            row, col = hovered_cell
-            outline = battle.ground_cell_rect(row, col)
-            color = RED if battle.remove_mode else (GOLD if battle.use_core else battle.region_color())
-            pygame.draw.rect(self.screen, color, outline, 2, border_radius=12)
-            if battle.cell_is_water(row, col):
-                pygame.draw.arc(self.screen, (110, 213, 250), outline.inflate(-22, -28), 0, math.pi, 2)
-        for defender in battle.defenders:
-            self.draw_defender(defender)
-        for enemy in battle.enemies:
-            self.draw_enemy(enemy)
-        self.draw_projectiles(battle)
-        self.draw_particles(battle)
-        self.draw_battle_status()
-        if battle.finished:
-            self.draw_result_overlay()
+            def load_scene(code=code, scene=mission.get("scene", code)):
+                path = os.path.join(ASSET_DIR, "hd", "scenes", f"{scene}.png")
+                self.assets["scenes"][code] = self.safe_image(path, (WIDTH, HEIGHT), (28, 47, 43))
 
-    def draw_lane_guides(self, battle: Battle) -> None:
-        """Delimita as faixas sem reapresentar a antiga grade de quadrados."""
-        guides = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        default = {
-            "city": (202, 216, 218, 82),
-            "desert": (128, 93, 49, 82),
-            "beach": (177, 132, 75, 74),
-        }[battle.region]
-        for boundary in range(1, ROWS):
-            y = int(BOARD.top + boundary * CELL_H)
-            is_shore = battle.region == "beach" and boundary in {2, 3}
-            color = (181, 241, 249, 145) if is_shore else default
-            thickness = 3 if is_shore else 2
-            for x in range(BOARD.left + 8, BOARD.right - 8, 96):
-                pygame.draw.line(guides, color, (x, y), (min(x + 54, BOARD.right - 8), y), thickness)
-        self.screen.blit(guides, (0, 0))
+            jobs.append((f"Terreno: {mission['name']}", load_terrain))
+            jobs.append((f"Cenário: {mission['name']}", load_scene))
 
-    def draw_lane_bombs(self, battle: Battle) -> None:
-        """Mostra a contenção visual própria de cada terreno antes da invasão."""
-        for cart in battle.lane_bombs:
-            if cart.state == "spent":
-                continue
-            y = cell_center(cart.row, 0, battle.region)[1]
-            x = cart.x if cart.state == "rolling" else BOARD.left - 18
-            sprite = self.assets.images.get(battle.lane_bomb_asset_key(cart.row))
-            is_water_buoy = battle.region == "beach" and cart.row in battle.water_rows
-            if sprite and sprite.get_width() > 1:
-                width, height = (66, 52) if is_water_buoy else (74, 50)
-                self.blit_sprite(sprite, x - width / 2, y - height + 14, width, height)
-            else:
-                pygame.draw.rect(self.screen, (85, 94, 95), (int(x - 29), int(y - 23), 50, 24), border_radius=5)
-                pygame.draw.rect(self.screen, GOLD, (int(x - 8), int(y - 32), 23, 14), border_radius=4)
-            beacon = 4 + int(abs(math.sin(self.scene_elapsed * 8 + cart.row)) * 3)
-            _, accent = battle.lane_bomb_info(cart.row)
-            pygame.draw.circle(self.screen, accent, (int(x - 11), int(y - 39)), beacon)
-            if cart.state == "armed":
-                label = "BOIA" if is_water_buoy else "CARGA"
-                self.draw_text(label, self.fonts.tiny, accent, (x - 2, y + 16), "center", True)
+        for key in ("mina_contencao",):
 
-    def draw_battle_top(self) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        rects = battle.card_rects()
-        for index, ((key, display), rect) in enumerate(zip(battle.selected, rects)):
-            data = DEFENSES[key]
-            active = index == battle.selected_card and not battle.use_core
-            self.panel(rect, 238, GOLD if active else battle.region_color(), 7)
-            if battle.card_cooldowns[index] > 0:
-                dark = pygame.Surface(rect.size, pygame.SRCALPHA)
-                dark.fill((0, 0, 0, 125))
-                self.screen.blit(dark, rect)
-            self.blit_sprite(self.card_sprite(battle.region, key, int(data["sprite"])), rect.x + 5, rect.y + 25, 44, 56)
-            self.draw_text(str(index + 1), self.fonts.tiny, GOLD, (rect.x + 7, rect.y + 6))
-            metric_a, metric_b = self.card_metrics(data)
-            self.draw_text(f"{data['cost']} SUP", self.fonts.tiny, GOLD, (rect.x + 51, rect.y + 15))
-            self.draw_text(metric_a, self.fonts.tiny, WHITE, (rect.x + 51, rect.y + 35))
-            self.draw_text(metric_b, self.fonts.tiny, TEAL if data["ammo"] or data["role"] in {"radio", "reload", "medic", "promoter"} else GRAY, (rect.x + 51, rect.y + 54))
-            if data.get("water_only"):
-                self.draw_text("ÁGUA", self.fonts.tiny, TEAL, (rect.centerx, rect.bottom - 15), "center")
-        self.panel(pygame.Rect(WIDTH - 176, 8, 166, 104), 230, battle.region_color(), 8)
-        self.draw_text(f"{battle.supplies} SUP", self.fonts.h2, GOLD, (WIDTH - 93, 18), "center")
-        self.draw_text(f"ONDA {battle.wave}/15", self.fonts.small, WHITE, (WIDTH - 93, 48), "center")
-        self.draw_text(f"{len(battle.enemies) + len(battle.orders)} INVASORES", self.fonts.tiny, GRAY, (WIDTH - 93, 78), "center")
+            def load_prop(key=key):
+                path = os.path.join(ASSET_DIR, "hd", "props", f"{key}.png")
+                self.assets["props"][key] = self.safe_image(path, (100, 78), (90, 104, 82))
 
-        # Comandos de missão em uma única aba, sempre acima do terreno.
-        shelf = pygame.Rect(10, 118, WIDTH - 20, 50)
-        self.panel(shelf, 221, battle.region_color(), 8)
-        self.button("MENU", battle.menu_rect(), battle.region_color())
-        self.button("PAUSA", battle.pause_rect(), GOLD)
-        self.button("REMOVER", battle.remove_rect(), RED if battle.remove_mode else (88, 125, 132))
-        self.button(f"N3 x{battle.cores}", battle.core_rect(), GOLD if battle.cores else (70, 73, 75), battle.cores > 0)
-        self.button("PRÓXIMA", battle.next_wave_rect(), battle.region_color(), not battle.started_wave)
-        if battle.started_wave:
-            tactical_status = f"HORDA ATIVA • {len(battle.enemies) + len(battle.orders)} invasores"
-        else:
-            tactical_status = f"INTERVALO TÁTICO • {max(0, math.ceil(battle.intermission))} s"
-        ticker = battle.message if battle.message_timer > 0 else "Equipe em posição."
-        if len(ticker) > 62:
-            ticker = ticker[:59] + "..."
-        self.draw_text(tactical_status, self.fonts.tiny, WHITE, (615, 127))
-        self.draw_text(ticker, self.fonts.tiny, GOLD if battle.message_timer > 0 else GRAY, (615, 147))
-        self.draw_text("P", self.fonts.tiny, GRAY, (WIDTH - 26, 136), "topright")
+            jobs.append((f"Defesa: {key.replace('_', ' ')}", load_prop))
 
-        # Ficha completa apenas por hover: remove a redundância sem esconder a
-        # informação tática para quem quer comparar as cartas.
-        mouse = pygame.mouse.get_pos()
-        hovered = next(((key, display, rect) for (key, display), rect in zip(battle.selected, rects) if rect.collidepoint(mouse)), None)
-        if hovered:
-            key, display, rect = hovered
-            data = DEFENSES[key]
-            tooltip_x = int(clamp(rect.centerx - 170, 154, WIDTH - 350))
-            tooltip = pygame.Rect(tooltip_x, 178, 340, 72)
-            self.panel(tooltip, 239, battle.region_color(), 8)
-            self.draw_text(display, self.fonts.small, GOLD, (tooltip.x + 13, tooltip.y + 9))
-            self.draw_wrapped(data["ability"], self.fonts.tiny, WHITE, pygame.Rect(tooltip.x + 13, tooltip.y + 29, tooltip.width - 26, 35), 2)
-        elif battle.core_rect().collidepoint(mouse):
-            tooltip = pygame.Rect(365, 178, 362, 58)
-            self.panel(tooltip, 239, GOLD, 8)
-            self.draw_text("N3", self.fonts.small, GOLD, (tooltip.x + 13, tooltip.y + 9))
-            self.draw_text("Prêmio do chefe: ascende uma defesa por 18 s e recarrega a munição.", self.fonts.tiny, WHITE, (tooltip.x + 13, tooltip.y + 30))
+        for key in ("muzzle", "bullet", "grenade", "explosion", "flame", "heal", "water_splash"):
 
-    def draw_defender(self, defender: Defender) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        x, y = defender.x, defender.y
-        shadow = pygame.Surface((100, 32), pygame.SRCALPHA)
-        if battle.cell_is_water(defender.row, defender.col):
-            pygame.draw.ellipse(shadow, (90, 220, 235, 105), shadow.get_rect(), width=2)
-            pygame.draw.ellipse(shadow, (7, 36, 52, 85), shadow.get_rect().inflate(-18, -10))
-        else:
-            pygame.draw.ellipse(shadow, (0, 0, 0, 100), shadow.get_rect())
-        self.screen.blit(shadow, (int(x - 50), int(y + 18)))
-        bob = math.sin(self.scene_elapsed * 2.1 + defender.col) * 1.3
-        # Veículos e embarcações preservam seus retratos funcionais próprios;
-        # soldados, suporte e armadilhas recebem a arte do nível real da carta.
-        if defender.stats["role"] in {"boat", "sub"}:
-            sprite = self.assets.base_unit("beach", defender.sprite_index)
-        else:
-            sprite = self.assets.unit(battle.region, defender.sprite_index, int(defender.stats["level"]))
-        scale = (86, 98) if defender.stats["role"] not in {"barrier", "boat", "sub"} else (105, 82)
-        self.blit_sprite(sprite, x - scale[0] / 2, y - scale[1] + bob, *scale)
-        if defender.ascended > 0:
-            pygame.draw.circle(self.screen, GOLD, (int(x), int(y - 16)), 42, 2)
-            pygame.draw.circle(self.screen, (255, 232, 116), (int(x), int(y - 16)), 31, 1)
-            self.draw_text("N3", self.fonts.tiny, GOLD, (x, y - 73), "center")
-            if defender.stats["role"] == "reload" and defender.stats["level"] >= 2:
-                turret_x = min(BOARD.right - 18, x + CELL_W * 0.7)
-                turret_y = y + 17
-                pygame.draw.ellipse(self.screen, (17, 28, 32), (int(turret_x - 19), int(turret_y - 8), 38, 15))
-                pygame.draw.rect(self.screen, (118, 147, 151), (int(turret_x - 13), int(turret_y - 25), 26, 21), border_radius=4)
-                pygame.draw.rect(self.screen, TEAL, (int(turret_x + 8), int(turret_y - 20), 24, 6), border_radius=3)
-                self.draw_text("INF", self.fonts.tiny, GOLD, (turret_x, turret_y - 37), "center")
-        if defender.stun > 0:
-            self.draw_text("STUN", self.fonts.tiny, GOLD, (x, y - 94), "center", True)
-        if defender.corrosion > 0:
-            self.draw_text("COR", self.fonts.tiny, (143, 232, 104), (x, y - 82), "center")
-        self.health_bar(x - 38, y + 36, 76, defender.hp / defender.max_hp, (89, 214, 144))
-        if defender.max_ammo:
-            self.ammo_bar(x - 30, y + 47, 60, defender.ammo / max(1, defender.max_ammo))
+            def load_effect(key=key):
+                path = os.path.join(ASSET_DIR, "hd", "effects", f"{key}.png")
+                self.assets["effects"][key] = self.safe_image(path, (128, 128), (240, 190, 80))
 
-    def draw_enemy(self, enemy: Enemy) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        bob_speed = 10 if enemy.is_boss else 14
-        bob = math.sin(enemy.age * bob_speed + enemy.row * 0.9) * (2.5 if enemy.is_boss else 1.8)
-        stride = math.sin(enemy.age * bob_speed * 0.5) * 2
-        shadow = pygame.Surface((120 if enemy.is_boss else 76, 26), pygame.SRCALPHA)
-        water_enemy = battle.region == "beach" and enemy.row in battle.water_rows
-        if water_enemy:
-            pygame.draw.ellipse(shadow, (91, 221, 238, 112), shadow.get_rect(), width=2)
-            pygame.draw.ellipse(shadow, (8, 37, 50, 88), shadow.get_rect().inflate(-16, -8))
-        else:
-            pygame.draw.ellipse(shadow, (0, 0, 0, 115), shadow.get_rect())
-        self.screen.blit(shadow, (int(enemy.x - shadow.get_width() / 2), int(enemy.y + 18)))
-        sprite = self.assets.zombie(battle.region, int(enemy.data["sprite"]))
-        scale = (132, 142) if enemy.is_boss else (82, 96)
-        if enemy.stun > 0:
-            angle = math.sin(enemy.age * 18) * 8
-        else:
-            angle = stride
-        rendered = pygame.transform.rotate(self.assets.scaled(sprite, *scale), angle)
-        if enemy.burrowed:
-            rendered.set_alpha(208)
-        self.screen.blit(rendered, (int(enemy.x - scale[0] / 2), int(enemy.y - scale[1] + bob)))
-        if enemy.burn > 0:
-            pygame.draw.circle(self.screen, (244, 133, 47), (int(enemy.x), int(enemy.y - 35)), 13, 2)
-        if enemy.corrosion > 0:
-            pygame.draw.circle(self.screen, (121, 225, 96), (int(enemy.x), int(enemy.y - 35)), 16, 1)
-        if "steal" in enemy.tags:
-            pygame.draw.circle(self.screen, GOLD, (int(enemy.x), int(enemy.y - 75)), 14, 2)
-            self.draw_text("CLIQUE", self.fonts.tiny, GOLD, (enemy.x, enemy.y - 96), "center")
-        width = 104 if enemy.is_boss else 64
-        self.health_bar(enemy.x - width / 2, enemy.y + 31, width, enemy.hp / enemy.max_hp, RED)
-        if enemy.is_boss:
-            self.draw_text(enemy.data["name"], self.fonts.tiny, RED, (enemy.x, enemy.y - 103), "center")
+            jobs.append((f"Efeito: {key.replace('_', ' ')}", load_effect))
 
-    def draw_projectiles(self, battle: Battle) -> None:
-        for projectile in battle.projectiles:
-            t = clamp(projectile.elapsed / projectile.travel, 0, 1)
-            x = lerp(projectile.x, projectile.target_x, t)
-            y = lerp(projectile.y, projectile.target_y, t) - (math.sin(t * math.pi) * 46 if projectile.kind in {"grenade", "mortar", "bazooka"} else 0)
-            colors = {
-                "rifle": (245, 223, 126),
-                "sniper": (215, 241, 255),
-                "shotgun": (255, 206, 91),
-                "grenade": (237, 148, 60),
-                "mortar": (255, 139, 78),
-                "bazooka": (246, 109, 60),
-                "flame": (246, 142, 45),
-                "torpedo": (74, 207, 237),
-                "drone": (123, 223, 207),
-                "turret": (154, 237, 226),
-                "acid": (119, 231, 90),
-                "enemy_bullet": (240, 100, 85),
-            }
-            color = colors.get(projectile.kind, WHITE)
-            size = 7 if projectile.kind in {"grenade", "mortar", "bazooka", "torpedo"} else 4
-            pygame.draw.circle(self.screen, color, (int(x), int(y)), size)
+        def load_ground_layers():
+            self.ground_layers = self.build_ground_layers()
 
-    def draw_particles(self, battle: Battle) -> None:
-        for particle in battle.particles:
-            alpha = int(255 * clamp(particle.ttl / 0.9, 0, 1))
-            surf = pygame.Surface((int(particle.size * 2 + 2), int(particle.size * 2 + 2)), pygame.SRCALPHA)
-            pygame.draw.circle(surf, (*particle.color, alpha), (surf.get_width() // 2, surf.get_height() // 2), int(particle.size))
-            self.screen.blit(surf, (int(particle.x - surf.get_width() / 2), int(particle.y - surf.get_height() / 2)))
-        for text in battle.texts:
-            self.draw_text(text.text, self.fonts.tiny, text.color, (text.x, text.y), "center", True)
+        jobs.append(("Ajustando terreno jogável", load_ground_layers))
+        return jobs
 
-    def draw_battle_status(self) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        if battle.boss_warning > 0:
-            banner = pygame.Rect(WIDTH // 2 - 330, 238, 660, 124)
-            self.panel(banner, 244, RED, 12)
-            self.draw_text("ALERTA: CHEFE CHEGANDO", self.fonts.h1, RED, (banner.centerx, banner.y + 16), "center", True)
-            self.draw_text(battle.boss_banner_name, self.fonts.h2, WHITE, (banner.centerx, banner.y + 54), "center", True)
-            self.draw_text(battle.boss_banner_subtitle, self.fonts.small, GOLD, (banner.centerx, banner.y + 85), "center")
-        if battle.paused:
-            veil = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            veil.fill((3, 8, 12, 132))
-            self.screen.blit(veil, (0, 0))
-            pause_card = pygame.Rect(WIDTH // 2 - 205, HEIGHT // 2 - 74, 410, 148)
-            self.panel(pause_card, 246, GOLD, 12)
-            self.draw_text("PAUSADO", self.fonts.title, GOLD, (pause_card.centerx, pause_card.y + 23), "center", True)
-            self.draw_text("Clique em PAUSA ou pressione P para continuar.", self.fonts.small, WHITE, (pause_card.centerx, pause_card.y + 86), "center")
+    def update_loading(self):
+        """Load a small batch every rendered frame until the cache is ready."""
+        for _ in range(2):
+            if not self.loading_jobs:
+                break
+            label, job = self.loading_jobs.pop(0)
+            self.loading_status = label
+            job()
+            self.loading_completed += 1
+        if not self.loading_jobs and not self.assets_ready:
+            self.assets_ready = True
+            self.loading_status = "Operação pronta"
 
-    def draw_result_overlay(self) -> None:
-        assert self.battle is not None
-        battle = self.battle
-        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((3, 6, 9, 188))
-        self.screen.blit(overlay, (0, 0))
-        heading = "REGIÃO PROTEGIDA" if battle.victory else "BASE INVADIDA"
-        color = GOLD if battle.victory else RED
-        self.panel(pygame.Rect(WIDTH // 2 - 265, HEIGHT // 2 - 130, 530, 285), 242, color, 16)
-        self.draw_text(heading, self.fonts.title, color, (WIDTH / 2, HEIGHT / 2 - 85), "center", True)
-        body = "Você venceu as 15 ondas. Todos os territórios continuam disponíveis para escolher sua próxima missão." if battle.victory else "Um infectado atravessou a linha final. Refaça a equipe e preserve munição para as ondas finais."
-        self.draw_wrapped(body, self.fonts.body, WHITE, pygame.Rect(WIDTH // 2 - 205, HEIGHT // 2 - 30, 410, 55), 3, center=True)
-        self.draw_text(f"Onda alcançada: {battle.wave}/15", self.fonts.small, GRAY, (WIDTH / 2, HEIGHT // 2 + 46), "center")
-        self.button("VOLTAR AO MAPA", pygame.Rect(WIDTH // 2 - 145, HEIGHT // 2 + 100, 290, 50), color)
+    def safe_image(self, path: str, size: tuple[int, int], fallback: tuple[int, int, int]) -> pygame.Surface:
+        try:
+            source = pygame.image.load(path).convert_alpha()
+            return pygame.transform.smoothscale(source, size)
+        except (pygame.error, FileNotFoundError):
+            surface = pygame.Surface(size, pygame.SRCALPHA)
+            pygame.draw.ellipse(surface, (0, 0, 0, 65), (8, size[1] - 16, size[0] - 16, 10))
+            pygame.draw.circle(surface, fallback, (size[0] // 2, size[1] // 2 - 10), min(size) // 3)
+            return surface
 
-    def health_bar(self, x: float, y: float, width: float, ratio: float, color: tuple[int, int, int]) -> None:
-        rect = pygame.Rect(int(x), int(y), int(width), 6)
-        pygame.draw.rect(self.screen, (22, 26, 28), rect, border_radius=3)
-        pygame.draw.rect(self.screen, color, (rect.x, rect.y, int(rect.width * clamp(ratio, 0, 1)), rect.height), border_radius=3)
+    def mission(self) -> dict[str, Any]:
+        return MISSIONS[self.stage]
 
-    def ammo_bar(self, x: float, y: float, width: float, ratio: float) -> None:
-        rect = pygame.Rect(int(x), int(y), int(width), 4)
-        pygame.draw.rect(self.screen, (19, 28, 33), rect, border_radius=2)
-        pygame.draw.rect(self.screen, TEAL, (rect.x, rect.y, int(rect.width * clamp(ratio, 0, 1)), rect.height), border_radius=2)
+    def unit_label(self, key: str) -> str:
+        return self.mission().get("unit_names", {}).get(key, UNIT_DATA[key]["label"])
 
-    def blit_sprite(self, sprite: pygame.Surface, x: float, y: float, width: float, height: float) -> None:
-        if sprite.get_width() <= 1:
-            return
-        scaled = self.assets.scaled(sprite, width, height)
-        self.screen.blit(scaled, (int(x), int(y)))
+    def zombie_label(self, key: str) -> str:
+        return self.mission().get("zombie_names", {}).get(key, ZOMBIE_DATA[key]["label"])
 
-    def card_sprite(self, region: str, key: str, index: int) -> pygame.Surface:
-        """Cartas marítimas preservam a silhueta naval mesmo fora da Praia."""
-        if DEFENSES.get(key, {}).get("water_only"):
-            water_index = {"lancha": 5, "submarino": 6, "bomba_agua": 11}[key]
-            return self.assets.base_unit("beach", water_index)
-        level = int(DEFENSES.get(key, {}).get("level", 1))
-        return self.assets.unit(region, index, level)
+    def zombie_ability(self, key: str) -> str:
+        return self.mission().get("zombie_abilities", {}).get(key, "Ameaça escalável")
+
+    def defender_max_hp(self, key: str, rank: int = 1) -> float:
+        """Ranks are earned visibly through boss medals, never pre-selected buffs."""
+        return UNIT_DATA[key]["hp"] * (1 + .18 * max(0, rank - 1))
+
+    def defender_damage(self, defender: Defender) -> float:
+        rank_bonus = 1 + .26 * max(0, defender.rank - 1)
+        return UNIT_DATA[defender.key]["damage"] * rank_bonus * self.command_bonus(defender)
+
+    def defender_range(self, defender: Defender) -> float:
+        base = UNIT_DATA[defender.key].get("range", float("inf"))
+        if math.isinf(base):
+            return base
+        # The recruit begins at two cells, then earns genuinely useful reach.
+        extension = 76 * max(0, defender.rank - 1) if defender.key == "recruta" else 28 * max(0, defender.rank - 1)
+        return base + extension
+
+    def defender_rate(self, defender: Defender) -> float:
+        return max(.18, UNIT_DATA[defender.key]["rate"] * (1 - .07 * max(0, defender.rank - 1)))
+
+    def radio_income(self, data: dict[str, Any]) -> int:
+        return max(1, int(data.get("income", RADIO_SUPPLIES)))
+
+    def unit_image(self, key: str) -> pygame.Surface:
+        code = self.mission()["code"]
+        regional = self.assets["regional_units"].get(key, {})
+        return regional.get(code, self.assets["units"][key])
+
+    def zombie_image(self, key: str) -> pygame.Surface:
+        code = self.mission()["code"]
+        regional = self.assets["regional_zombies"].get(key, {})
+        return regional.get(code, self.assets["zombies"][key])
+
+    def build_ground_layers(self) -> dict[str, pygame.Surface]:
+        """Add only subtle map-specific texture over the integrated scenery.
+
+        The generated city road, desert road and beach are the battlefield;
+        these transparent overlays add small playable cues without returning a
+        bordered rectangle or visible square grid.
+        """
+        return {mission["code"]: self.make_ground_layer(mission["code"]) for mission in MISSIONS}
+
+    def make_ground_layer(self, code: str) -> pygame.Surface:
+        rng = random.Random(f"soldados-vs-zumbis-ground-{code}")
+        ground = pygame.Surface((BOARD_W, BOARD_H), pygame.SRCALPHA)
+        if code == "city":
+            ground.fill((18, 21, 21, 20))
+            for row in range(1, ROWS):
+                y = row * CELL_H - 5
+                pygame.draw.line(ground, (240, 211, 139, 25), (0, y), (BOARD_W, y), 1)
+            for _ in range(46):
+                x, y = rng.randrange(-30, BOARD_W), rng.randrange(0, BOARD_H)
+                pygame.draw.ellipse(ground, (15, 20, 21, rng.randrange(10, 28)), (x, y, rng.randrange(12, 75), rng.randrange(2, 9)))
+        elif code == "desert":
+            ground.fill((178, 92, 34, 18))
+            for _ in range(80):
+                x, y = rng.randrange(-30, BOARD_W), rng.randrange(0, BOARD_H)
+                pygame.draw.arc(ground, (243, 194, 112, rng.randrange(18, 48)), (x, y, rng.randrange(38, 130), rng.randrange(6, 18)), .1, math.pi - .1, 1)
+        else:  # beach
+            pygame.draw.rect(ground, (40, 166, 188, 26), (0, CELL_H, BOARD_W, CELL_H * 3))
+            for _ in range(74):
+                y = rng.randrange(CELL_H + 4, CELL_H * 4 - 4)
+                x = rng.randrange(-30, BOARD_W)
+                pygame.draw.arc(ground, (223, 249, 240, rng.randrange(35, 78)), (x, y, rng.randrange(22, 78), rng.randrange(4, 12)), .12, math.pi - .12, 1)
+            for _ in range(35):
+                x = rng.randrange(-20, BOARD_W)
+                y = rng.choice((rng.randrange(0, CELL_H), rng.randrange(CELL_H * 4, BOARD_H)))
+                pygame.draw.ellipse(ground, (219, 179, 104, rng.randrange(12, 34)), (x, y, rng.randrange(9, 50), rng.randrange(2, 8)))
+        return ground
 
     @staticmethod
-    def card_metrics(data: dict) -> tuple[str, str]:
-        """Converte a função em dois números úteis para a face da carta.
+    def fit_image(image: pygame.Surface, bound: tuple[int, int]) -> pygame.Surface:
+        """Scale an image into a card without turning vehicles into tall blobs."""
+        factor = min(bound[0] / image.get_width(), bound[1] / image.get_height())
+        return pygame.transform.smoothscale(image, (max(1, int(image.get_width() * factor)), max(1, int(image.get_height() * factor))))
 
-        A descrição continua no hover/dossiê. Aqui entram apenas estatísticas
-        que o jogador usa para decidir rápido entre custo, alcance, munição,
-        cura, recarga e contenção.
-        """
-        role = str(data["role"])
-        level = int(data["level"])
-        if role == "radio":
-            gain = 14 if level == 1 else 28
-            return f"SUP +{gain}", f"CICLO {float(data['cooldown']):.1f}s"
-        if role == "reload":
-            ammo = 4 if level == 1 else 7
-            return f"RECARGA +{ammo}", f"RAIO {int(data['range'])}"
-        if role == "medic":
-            return ("LIMPA DEBUFF", f"RAIO {int(data['range'])}") if level == 1 else ("CURA +26", f"RAIO {int(data['range'])}")
-        if role == "promoter":
-            return "PROMOVE N1→N2", f"CICLO {int(data['cooldown'])}s"
-        if role == "barrier":
-            return f"HP {int(data['hp'])}", "EXPLODE" if level >= 2 else "BLOQUEIO"
-        if role == "mine":
-            area = "ÁREA" if data.get("water_only") else ("SEGURA" if level >= 2 else "1 ALVO")
-            return f"DANO {int(data['damage'])}", area
-        return f"DANO {int(data['damage'])}", f"MUN {int(data['ammo'])} • ALC {int(data['range'])}"
+    def render_text(self, text: str, pos: tuple[int, int], font="body", color=(238, 235, 216), center=False, shadow=True):
+        image = self.fonts[font].render(text, True, color)
+        rect = image.get_rect(center=pos) if center else image.get_rect(topleft=pos)
+        if shadow:
+            shadow_img = self.fonts[font].render(text, True, (13, 18, 17))
+            self.screen.blit(shadow_img, rect.move(2, 2))
+        self.screen.blit(image, rect)
+        return rect
 
-    def draw_wrapped(self, text: str, font: pygame.font.Font, color: tuple[int, int, int], rect: pygame.Rect, lines: int, center: bool = False) -> None:
-        words = text.split()
-        built: list[str] = []
-        current = ""
-        for word in words:
-            candidate = word if not current else current + " " + word
-            if font.size(candidate)[0] <= rect.width:
-                current = candidate
-            else:
-                built.append(current)
-                current = word
-        if current:
-            built.append(current)
-        for index, line in enumerate(built[:lines]):
-            y = rect.y + index * (font.get_height() + 2)
-            anchor = "midtop" if center else "topleft"
-            x = rect.centerx if center else rect.x
-            self.draw_text(line, font, color, (x, y), anchor)
+    def panel(self, rect: pygame.Rect, fill=(30, 42, 40), border=(116, 130, 110), radius=10, inset=True):
+        pygame.draw.rect(self.screen, (12, 20, 20), rect.inflate(5, 5), border_radius=radius + 2)
+        pygame.draw.rect(self.screen, border, rect, border_radius=radius)
+        pygame.draw.rect(self.screen, fill, rect.inflate(-4, -4), border_radius=max(2, radius - 2))
+        if inset:
+            pygame.draw.line(self.screen, (186, 179, 139), (rect.x + 8, rect.y + 4), (rect.right - 8, rect.y + 4), 1)
 
-    def draw(self) -> None:
+    def button(self, rect: pygame.Rect, label: str, color=(89, 129, 72), enabled=True, font="med"):
+        mouse = pygame.mouse.get_pos()
+        hover = rect.collidepoint(mouse) and enabled
+        dark = tuple(max(0, c - 35) for c in color)
+        self.panel(rect, color if hover else dark, (221, 191, 117) if hover else (75, 84, 72), 8)
+        label_color = (255, 248, 218) if enabled else (123, 126, 112)
+        self.render_text(label, rect.center, font, label_color, center=True)
+        return rect
+
+    def toast_message(self, message: str, duration=2.3):
+        self.toast, self.toast_timer = message, duration
+
+    def start_selection(self, stage: int):
+        self.stage = stage
+        self.selection = []
+        self.scene = "select"
+        self.toast_message("Monte até 8 cartas. Medalhas de chefe evoluem unidades durante a operação.", 3.2)
+
+    def available_units(self) -> list[str]:
+        return [key for key in MISSIONS[self.stage]["units"] if not UNIT_DATA[key].get("hidden")]
+
+    def begin_game(self):
+        if not self.selection:
+            self.toast_message("Escolha pelo menos uma carta.")
+            return
+        self.scene = "game"
+        self.supplies = STARTING_SUPPLIES[self.stage]
+        self.defenders, self.zombies, self.projectiles, self.particles, self.effects, self.pickups = [], [], [], [], [], []
+        self.row_mines = [True] * ROWS
+        self.defeat_reason = ""
+        self.selected_card = None
+        self.card_cooldowns = {key: 0 for key in self.selection}
+        self.remove_mode = False
+        self.paused = False
+        self.end_state = None
+        self.wave = 0
+        self.kills = 0
+        self.medals = 0
+        self.bosses_defeated = 0
+        self.queue = []
+        self.spawn_timer = .6
+        self.intermission = .5
+        self.pickup_timer = 11.5
+        self.banner = 2.5
+        self.next_wave()
+
+    def next_wave(self):
+        self.wave += 1
+        if self.wave > self.total_waves:
+            self.victory()
+            return
+        mission = MISSIONS[self.stage]
+        self.wave_profile = WAVE_PROFILES[self.wave - 1]
+        available = mission["pool"][: min(len(mission["pool"]), self.wave_profile["unlock"])]
+        quantity = self.wave_profile["count"] + self.stage * 2
+        minions: list[tuple[str, str | None]] = [(self.rng.choice(available), None) for _ in range(quantity)]
+        if self.wave >= 8:
+            minions.append((self.rng.choice(available[-min(3, len(available)):]), None))
+        self.rng.shuffle(minions)
+        boss_id = mission["bosses"].get(self.wave)
+        # The queue is popped from the right.  Keeping the boss at the left
+        # lets the wave show its own horde first and announces the boss when
+        # the line has already had a moment to establish its threats.
+        self.queue = [(BOSS_DATA[boss_id]["sprite"], boss_id)] + minions if boss_id else minions
+        self.spawn_timer = self.wave_profile["spacing"]
+        self.banner = 3.0
+        if boss_id:
+            boss = BOSS_DATA[boss_id]
+            self.toast_message(f"ONDA {self.wave}/{self.total_waves} — CHEFE: {boss['label']}", 3.4)
+        else:
+            self.toast_message(f"ONDA {self.wave}/{self.total_waves} — ameaça {len(self.queue)}", 2.8)
+
+    def victory(self):
+        self.end_state = "victory"
+        if self.stage < len(MISSIONS) - 1 and self.progress <= self.stage + 1:
+            self.progress = min(len(MISSIONS), self.stage + 2)
+            self.save_progress()
+        self.toast_message("Operação concluída. Próxima região desbloqueada!", 4)
+
+    def defeat(self, reason: str = "A horda atravessou a última linha de defesa."):
+        self.end_state = "defeat"
+        self.defeat_reason = reason
+        self.toast_message("GAME OVER — a horda alcançou o posto. Reagrupe o esquadrão.", 4)
+
+    def row_bounds(self, row: int) -> tuple[int, int]:
+        if self.mission()["code"] == "city":
+            return CITY_ROW_BOUNDS[row]
+        return BOARD_X, BOARD_X + BOARD_W
+
+    def cell_rect(self, row: int, col: int) -> pygame.Rect:
+        left, right = self.row_bounds(row)
+        cell_w = (right - left) / COLS
+        x1 = round(left + col * cell_w)
+        x2 = round(left + (col + 1) * cell_w)
+        return pygame.Rect(x1, BOARD_Y + row * CELL_H, x2 - x1, CELL_H)
+
+    def cell_center(self, row: int, col: int) -> tuple[int, int]:
+        return self.cell_rect(row, col).center
+
+    def row_ground_y(self, row: int) -> int:
+        return self.cell_rect(row, COLS // 2).bottom - 4
+
+    def row_spawn_x(self, row: int) -> int:
+        return self.row_bounds(row)[1]
+
+    def row_breach_x(self, row: int) -> int:
+        return self.row_bounds(row)[0] - 26
+
+    def defender_at(self, row: int, col: int) -> Defender | None:
+        return next((d for d in self.defenders if d.row == row and d.col == col), None)
+
+    def board_cell(self, pos: tuple[int, int]) -> tuple[int, int] | None:
+        if not BOARD_Y <= pos[1] < BOARD_Y + BOARD_H:
+            return None
+        row = int((pos[1] - BOARD_Y) // CELL_H)
+        left, right = self.row_bounds(row)
+        if not left <= pos[0] < right:
+            return None
+        col = int((pos[0] - left) / ((right - left) / COLS))
+        return int(row), int(col)
+
+    def card_rect(self, index: int) -> pygame.Rect:
+        return pygame.Rect(226 + index * 127, 73, 119, 83)
+
+    def selection_rect(self, index: int) -> pygame.Rect:
+        return pygame.Rect(78 + (index % 5) * 226, 153 + (index // 5) * 114, 210, 104)
+
+    @staticmethod
+    def title_button_rect(index: int) -> pygame.Rect:
+        return pygame.Rect(70, 409 + index * 48, 330, 39)
+
+    @staticmethod
+    def campaign_rect(index: int) -> pygame.Rect:
+        card_w, gap = 338, 46
+        total = len(MISSIONS) * card_w + (len(MISSIONS) - 1) * gap
+        return pygame.Rect((WIDTH - total) // 2 + index * (card_w + gap), 208, card_w, 330)
+
+    @staticmethod
+    def dossier_item_rect(index: int) -> pygame.Rect:
+        return pygame.Rect(46 + (index % 2) * 248, 196 + (index // 2) * 103, 232, 88)
+
+    @staticmethod
+    def dossier_back_rect() -> pygame.Rect:
+        return pygame.Rect(46, 645, 188, 42)
+
+    @staticmethod
+    def dossier_previous_rect() -> pygame.Rect:
+        return pygame.Rect(248, 645, 146, 42)
+
+    @staticmethod
+    def dossier_next_rect() -> pygame.Rect:
+        return pygame.Rect(408, 645, 146, 42)
+
+    def dossier_keys(self, kind: str | None = None) -> list[str]:
+        kind = kind or self.dossier_kind
+        if kind == "units":
+            return [key for key, data in UNIT_DATA.items() if not data.get("hidden")]
+        return list(ZOMBIE_DATA)
+
+    def dossier_page_count(self) -> int:
+        return max(1, math.ceil(len(self.dossier_keys()) / 8))
+
+    def dossier_page_keys(self) -> list[str]:
+        start = self.dossier_page * 8
+        return self.dossier_keys()[start:start + 8]
+
+    def open_dossier(self, kind: str):
+        self.dossier_kind = kind
+        self.dossier_page = 0
+        entries = self.dossier_page_keys()
+        self.dossier_key = entries[0] if entries else None
+        self.scene = f"dossier_{kind}"
+
+    def shift_dossier(self, offset: int):
+        self.dossier_page = max(0, min(self.dossier_page_count() - 1, self.dossier_page + offset))
+        entries = self.dossier_page_keys()
+        self.dossier_key = entries[0] if entries else None
+
+    def event(self, event: pygame.event.Event):
+        if event.type == pygame.QUIT:
+            self.running = False
+        if event.type == pygame.KEYDOWN:
+            if self.scene == "loading":
+                if self.assets_ready:
+                    self.scene = "title"
+                else:
+                    self.toast_message("Aguarde: os recursos ainda estão sendo preparados.")
+                return
+            if event.key == pygame.K_ESCAPE:
+                if self.scene == "title": self.running = False
+                elif self.scene in {"campaign", "about", "dossier_units", "dossier_zombies"}: self.scene = "title"
+                elif self.scene == "select": self.scene = "campaign"
+                elif self.scene == "game": self.selected_card = None; self.remove_mode = False
+            if self.scene in {"dossier_units", "dossier_zombies"}:
+                if event.key == pygame.K_LEFT: self.shift_dossier(-1)
+                if event.key == pygame.K_RIGHT: self.shift_dossier(1)
+            if self.scene == "game":
+                if event.key == pygame.K_SPACE: self.paused = not self.paused
+                if event.key == pygame.K_e: self.remove_mode = not self.remove_mode; self.selected_card = None
+                if event.key == pygame.K_r and self.end_state: self.begin_game()
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.scene == "loading":
+                if self.assets_ready:
+                    self.scene = "title"
+                else:
+                    self.toast_message("Carregamento em andamento.")
+            elif self.scene == "title": self.click_title(event.pos)
+            elif self.scene == "about":
+                if pygame.Rect(516, 570, 248, 48).collidepoint(event.pos): self.scene = "title"
+            elif self.scene in {"dossier_units", "dossier_zombies"}: self.click_dossier(event.pos)
+            elif self.scene == "campaign": self.click_campaign(event.pos)
+            elif self.scene == "select": self.click_selection(event.pos)
+            elif self.scene == "game": self.click_game(event.pos)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3 and self.scene == "game":
+            self.selected_card = None; self.remove_mode = False
+
+    def click_title(self, pos):
+        if self.title_button_rect(0).collidepoint(pos): self.scene = "campaign"
+        elif self.title_button_rect(1).collidepoint(pos): self.scene = "about"
+        elif self.title_button_rect(2).collidepoint(pos): self.open_dossier("units")
+        elif self.title_button_rect(3).collidepoint(pos): self.open_dossier("zombies")
+        elif self.title_button_rect(4).collidepoint(pos): self.running = False
+
+    def click_dossier(self, pos: tuple[int, int]):
+        for index, key in enumerate(self.dossier_page_keys()):
+            if self.dossier_item_rect(index).collidepoint(pos):
+                self.dossier_key = key
+                return
+        if self.dossier_back_rect().collidepoint(pos):
+            self.scene = "title"
+        elif self.dossier_previous_rect().collidepoint(pos):
+            self.shift_dossier(-1)
+        elif self.dossier_next_rect().collidepoint(pos):
+            self.shift_dossier(1)
+
+    def click_campaign(self, pos):
+        for i in range(len(MISSIONS)):
+            rect = self.campaign_rect(i)
+            if rect.collidepoint(pos):
+                if i + 1 <= self.progress:
+                    self.start_selection(i)
+                else:
+                    self.toast_message("Complete a operação anterior para desbloquear esta região.")
+                return
+        if pygame.Rect(72, 620, 230, 42).collidepoint(pos): self.scene = "title"
+        if pygame.Rect(972, 620, 235, 42).collidepoint(pos):
+            self.progress = 1; self.save_progress(); self.toast_message("Campanha reiniciada. Cidade é a única região liberada.")
+
+    def click_selection(self, pos):
+        keys = self.available_units()
+        for i, key in enumerate(keys):
+            if self.selection_rect(i).collidepoint(pos):
+                if key in self.selection:
+                    self.selection.remove(key)
+                elif len(self.selection) < 8:
+                    self.selection.append(key)
+                else:
+                    self.toast_message("O esquadrão já tem 8 cartas. Remova uma para trocar.")
+                return
+        if pygame.Rect(908, 630, 270, 50).collidepoint(pos): self.begin_game()
+        if pygame.Rect(98, 630, 200, 50).collidepoint(pos): self.scene = "campaign"
+
+    def click_game(self, pos):
+        if self.end_state:
+            if pygame.Rect(481, 518, 160, 49).collidepoint(pos): self.begin_game()
+            if pygame.Rect(655, 518, 160, 49).collidepoint(pos): self.scene = "campaign"
+            return
+        if pygame.Rect(23, 124, 172, 31).collidepoint(pos):
+            self.remove_mode = not self.remove_mode; self.selected_card = None
+            return
+        if pygame.Rect(24, 158, 171, 31).collidepoint(pos):
+            self.paused = not self.paused; return
+        for i, key in enumerate(self.selection):
+            if self.card_rect(i).collidepoint(pos):
+                info = UNIT_DATA[key]
+                if self.card_cooldowns[key] > 0:
+                    self.toast_message("Carta recarregando."); return
+                if self.supplies < info["cost"]:
+                    self.toast_message("Suprimentos insuficientes."); return
+                self.remove_mode = False
+                self.selected_card = key if self.selected_card != key else None
+                return
+        for pickup in list(self.pickups):
+            if pygame.Rect(int(pickup.x - 26), int(pickup.y - 23), 52, 46).collidepoint(pos):
+                self.supplies += pickup.amount; self.pickups.remove(pickup)
+                self.toast_message(f"+{pickup.amount} suprimentos")
+                return
+        cell = self.board_cell(pos)
+        if cell is None: return
+        row, col = cell
+        existing = self.defender_at(row, col)
+        if self.remove_mode:
+            if existing:
+                self.defenders.remove(existing); self.toast_message("Unidade recolhida.")
+            return
+        if not self.selected_card: return
+        key = self.selected_card
+        info = UNIT_DATA[key]
+        mission = MISSIONS[self.stage]
+        if info.get("tool"):
+            if existing:
+                existing.hp = min(self.defender_max_hp(existing.key, existing.rank), existing.hp + 180)
+                self.supplies -= info["cost"]; self.card_cooldowns[key] = info["rate"]; self.selected_card = None
+                center_x, center_y = self.cell_center(row, col)
+                self.spawn_effect("heal", center_x, center_y, .7, .68, spin=42)
+                self.toast_message("Unidade tratada e estabilizada.")
+            else: self.toast_message("A ferramenta médica precisa de uma unidade aliada.")
+            return
+        # An Engineer can reclaim a deployed turret.  The turret itself is
+        # never a purchasable hidden card; it is a construction he manages.
+        if info["kind"] == "engineer" and existing and existing.key == "torreta_engenheiro":
+            self.defenders.remove(existing)
+            self.supplies += 30
+            self.card_cooldowns[key] = max(.8, info.get("cooldown", 3.8) * .38)
+            self.selected_card = None
+            center_x, center_y = self.cell_center(row, col)
+            self.spawn_effect("heal", center_x, center_y, .46, .36, spin=-25)
+            self.toast_message("Torreta recolhida: +30 SUP recuperados.")
+            return
+        if existing:
+            self.toast_message("A célula já está ocupada."); return
+        water = row in mission["water_rows"]
+        if info.get("aquatic") and not water:
+            self.toast_message("Unidade aquática: só pode ser colocada em uma linha de água."); return
+        if not info.get("aquatic") and water:
+            self.toast_message("Esta unidade terrestre não pode operar sobre a água."); return
+        same_key = [d for d in self.defenders if d.key == key]
+        same_row = [d for d in same_key if d.row == row]
+        if info.get("max_total") and len(same_key) >= info["max_total"]:
+            self.toast_message(f"Limite operacional: {info['max_total']} {self.unit_label(key)}(s).")
+            return
+        if info.get("max_per_row") and len(same_row) >= info["max_per_row"]:
+            self.toast_message(f"A linha já tem o limite de {self.unit_label(key)}.")
+            return
+        self.defenders.append(Defender(key, row, col, self.defender_max_hp(key, 1)))
+        self.supplies -= info["cost"]
+        self.card_cooldowns[key] = info.get("cooldown", 2.6) if not info.get("tool") else info["rate"]
+        self.selected_card = None
+        self.toast_message(f"{self.unit_label(key)} em posição.", 1.2)
+
+    def boss_spec(self, zombie: Zombie) -> dict[str, Any] | None:
+        return BOSS_DATA.get(zombie.boss_id or "")
+
+    def is_boss(self, zombie: Zombie) -> bool:
+        return zombie.boss_id is not None or bool(ZOMBIE_DATA[zombie.key].get("boss"))
+
+    def boss_label(self, zombie: Zombie) -> str:
+        return (self.boss_spec(zombie) or {}).get("label", self.zombie_label(zombie.key))
+
+    def make_zombie(self, key: str, row: int, x: float, hp_scale: float | None = None, speed_scale: float | None = None, damage_scale: float | None = None, boss_id: str | None = None) -> Zombie:
+        info = ZOMBIE_DATA[key]
+        stage_scale = 1 + self.stage * .08
+        hp_scale = hp_scale if hp_scale is not None else self.wave_profile["hp"] * stage_scale
+        speed_scale = speed_scale if speed_scale is not None else self.wave_profile["speed"] * (1 + self.stage * .025)
+        damage_scale = damage_scale if damage_scale is not None else self.wave_profile["damage"] * stage_scale
+        boss = BOSS_DATA.get(boss_id or "")
+        if boss:
+            hp_scale *= boss["hp_mult"]
+            speed_scale *= boss["speed_mult"]
+            damage_scale *= boss["damage_mult"]
+        hp = info["hp"] * hp_scale
+        return Zombie(
+            key, row, x, hp, max_hp=hp, speed_scale=speed_scale,
+            damage_scale=damage_scale, walk_phase=self.rng.random() * math.tau,
+            boss_id=boss_id, boss_power_timer=(boss or {}).get("interval", 0) * .82,
+        )
+
+    def spawn_zombie(self, key: str, boss_id: str | None = None):
+        mission = MISSIONS[self.stage]
+        info = ZOMBIE_DATA[key]
+        if info.get("aquatic"):
+            rows = list(mission["water_rows"])
+        else:
+            rows = [r for r in range(ROWS) if r not in mission["water_rows"]]
+        if not rows: rows = list(range(ROWS))
+        row = self.rng.choice(rows)
+        x = self.row_spawn_x(row) + (32 if boss_id else self.rng.randint(14, 80))
+        self.zombies.append(self.make_zombie(key, row, x, boss_id=boss_id))
+        if boss_id:
+            self.spawn_effect("explosion", x, self.row_ground_y(row), .58, 1.14, spin=18)
+            self.toast_message(f"CHEFE EM CAMPO — {BOSS_DATA[boss_id]['label']}", 2.7)
+
+    def update(self, dt: float):
+        self.time += dt
+        self.toast_timer = max(0, self.toast_timer - dt)
         if self.scene == "loading":
-            self.draw_loading()
-        elif self.scene == "title":
-            self.draw_title()
-        elif self.scene == "campaign":
-            self.draw_campaign()
-        elif self.scene == "select":
-            self.draw_selection()
-        elif self.scene == "howto":
-            self.draw_howto()
-        elif self.scene.startswith("dossier"):
-            self.draw_dossier()
-        elif self.scene == "battle" and self.battle:
-            self.draw_battle()
+            self.loading_elapsed += dt
+            self.update_loading()
+            if self.assets_ready and self.loading_elapsed >= self.loading_duration:
+                self.scene = "title"
+            return
+        if self.scene != "game" or self.paused or self.end_state: return
+        for key in self.card_cooldowns:
+            self.card_cooldowns[key] = max(0, self.card_cooldowns[key] - dt)
+        self.pickup_timer -= dt
+        if self.pickup_timer <= 0:
+            self.pickup_timer = self.rng.uniform(*PICKUP_INTERVAL)
+            amount = self.rng.choice(PICKUP_VALUES)
+            pickup_row = self.rng.randrange(ROWS)
+            left, right = self.row_bounds(pickup_row)
+            self.pickups.append(Pickup(self.rng.randint(left + 40, right - 40), self.rng.randint(BOARD_Y + pickup_row * CELL_H + 24, BOARD_Y + (pickup_row + 1) * CELL_H - 24), amount))
+        for pickup in list(self.pickups):
+            pickup.life -= dt; pickup.drift += dt
+            pickup.y += math.sin(pickup.drift * 2) * .12
+            if pickup.life <= 0: self.pickups.remove(pickup)
+        if self.queue:
+            self.spawn_timer -= dt
+            if self.spawn_timer <= 0:
+                key, boss_id = self.queue.pop()
+                self.spawn_zombie(key, boss_id)
+                self.spawn_timer = max(.42, self.wave_profile["spacing"] * self.rng.uniform(.84, 1.12))
+        elif not self.zombies:
+            self.intermission -= dt
+            if self.intermission <= 0:
+                self.intermission = 2.8
+                self.next_wave()
+        self.banner = max(0, self.banner - dt)
+        self.update_defenders(dt)
+        self.update_projectiles(dt)
+        self.update_zombies(dt)
+        self.update_particles(dt)
+        self.update_effects(dt)
+
+    def targets_for(self, defender: Defender, kind: str) -> list[Zombie]:
+        candidates = [z for z in self.zombies if z.row == defender.row and z.x >= self.cell_rect(defender.row, defender.col).left - 7]
+        if kind in {"mortar", "drone"}:
+            candidates = self.zombies[:]
+        else:
+            distance = self.defender_range(defender)
+            if not math.isinf(distance):
+                origin = self.cell_rect(defender.row, defender.col).centerx
+                candidates = [z for z in candidates if z.x - origin <= distance]
+        return sorted(candidates, key=lambda z: z.x)
+
+    def command_bonus(self, defender: Defender) -> float:
+        """A single General rewards mixed placements around the command post."""
+        for ally in self.defenders:
+            if ally is defender or ally.key != "general":
+                continue
+            if abs(ally.row - defender.row) <= 1 and abs(ally.col - defender.col) <= 2:
+                return 1.16
+        return 1.0
+
+    def promote_defender(self, defender: Defender) -> bool:
+        data = UNIT_DATA[defender.key]
+        max_rank = data.get("max_rank", 3)
+        if defender.rank >= max_rank:
+            return False
+        old_max = self.defender_max_hp(defender.key, defender.rank)
+        remaining = max(0, defender.hp / old_max)
+        defender.rank += 1
+        new_max = self.defender_max_hp(defender.key, defender.rank)
+        # A promotion is a field refit, so it stabilizes a worn soldier
+        # instead of merely increasing the denominator of their health bar.
+        defender.hp = max(defender.hp, new_max * min(1.0, remaining + .20))
+        x, y = self.cell_center(defender.row, defender.col)
+        self.spawn_effect("heal", x, y, .72, .58, spin=34)
+        self.impact_particles(x, y - 12, (237, 206, 92), 12)
+        return True
+
+    def update_defenders(self, dt: float):
+        for d in list(self.defenders):
+            d.cooldown -= dt; d.pulse += dt; d.attack = max(0, d.attack - dt)
+            data = UNIT_DATA[d.key]
+            if d.poison > 0:
+                d.poison = max(0, d.poison - dt)
+                d.hp -= 4.5 * dt
+                if d.hp <= 0:
+                    self.defenders.remove(d)
+                    continue
+            d.stun = max(0, d.stun - dt)
+            if data["kind"] == "turret" and d.owner and not any(
+                ally.key == "engenheiro" and (ally.row, ally.col) == d.owner for ally in self.defenders
+            ):
+                self.defenders.remove(d)
+                self.toast_message("Torreta desligada: o Engenheiro foi perdido.")
+                continue
+            if d.stun > 0 and data["kind"] not in {"mine"}:
+                continue
+            rect = self.cell_rect(d.row, d.col)
+            center_x, center_y = rect.center
+            if data["kind"] == "mine":
+                hit = next((z for z in self.zombies if z.row == d.row and abs(z.x - center_x) < max(45, rect.width * .42)), None)
+                if hit:
+                    self.explode(center_x, center_y, data["damage"], 110, (75, 201, 207))
+                    self.defenders.remove(d)
+                continue
+            if data["kind"] == "engineer":
+                front_col = d.col + 1
+                owned_turret = next((ally for ally in self.defenders if ally.key == "torreta_engenheiro" and ally.owner == (d.row, d.col)), None)
+                if not owned_turret and front_col < COLS and not self.defender_at(d.row, front_col):
+                    turret = Defender(
+                        "torreta_engenheiro", d.row, front_col,
+                        self.defender_max_hp("torreta_engenheiro"), cooldown=.58,
+                        owner=(d.row, d.col),
+                    )
+                    self.defenders.append(turret)
+                    d.cooldown = max(data["rate"], 3.7)
+                    tx, ty = self.cell_center(turret.row, turret.col)
+                    self.spawn_effect("heal", tx, ty, .65, .56, spin=24)
+                    self.toast_message("Engenheiro implantou uma Torreta à frente.", 1.7)
+                elif d.cooldown <= 0:
+                    damaged = [
+                        ally for ally in self.defenders
+                        if ally is not d and abs(ally.row - d.row) <= 1 and abs(ally.col - d.col) <= 1
+                        and ally.hp < self.defender_max_hp(ally.key, ally.rank)
+                    ]
+                    if damaged:
+                        target = min(damaged, key=lambda ally: ally.hp / self.defender_max_hp(ally.key, ally.rank))
+                        target.hp = min(self.defender_max_hp(target.key, target.rank), target.hp + data["repair"])
+                        tx, ty = self.cell_center(target.row, target.col)
+                        self.spawn_effect("heal", tx, ty, .5, .44, spin=18)
+                        d.cooldown = self.defender_rate(d)
+                        d.attack = .12
+                    else:
+                        d.cooldown = .65
+                continue
+            if data["kind"] == "trainer":
+                if d.cooldown <= 0 and self.medals > 0:
+                    candidates = [
+                        ally for ally in self.defenders
+                        if ally is not d and not UNIT_DATA[ally.key].get("hidden")
+                        and UNIT_DATA[ally.key]["kind"] not in {"trainer", "radio", "medical", "mine"}
+                        and ally.rank < UNIT_DATA[ally.key].get("max_rank", 3)
+                        and abs(ally.row - d.row) <= 1 and abs(ally.col - d.col) <= 2
+                    ]
+                    if candidates:
+                        target = min(
+                            candidates,
+                            key=lambda ally: (
+                                0 if UNIT_DATA[ally.key].get("evolvable") else 1,
+                                ally.rank,
+                                abs(ally.row - d.row) + abs(ally.col - d.col),
+                            ),
+                        )
+                        if self.promote_defender(target):
+                            self.medals -= 1
+                            d.cooldown = self.defender_rate(d)
+                            d.attack = .18
+                            self.toast_message(f"{self.unit_label(target.key)} promovido para NÍVEL {target.rank}!", 2.2)
+                            continue
+                if d.cooldown <= 0:
+                    d.cooldown = .7
+                continue
+            if data["kind"] == "radio" and d.cooldown <= 0:
+                income = self.radio_income(data)
+                self.supplies += income
+                d.cooldown = self.defender_rate(d)
+                self.spawn_effect("heal", center_x, rect.top + 29, .6, .42, spin=20)
+                self.toast_message(f"{self.unit_label(d.key)}: +{income} suprimentos", 1.1)
+                continue
+            if data["kind"] == "vanguard":
+                # The Vanguardista is deliberately a blocker, not a cheap
+                # damage engine.  Its plow slows enemies only at the front.
+                for enemy in self.zombies:
+                    if enemy.row == d.row and 0 <= enemy.x - center_x <= data.get("range", 150):
+                        enemy.slow = max(enemy.slow, .72)
+            targets = self.targets_for(d, data["kind"])
+            if not targets or d.cooldown > 0: continue
+            x = rect.x + int(rect.width * .60)
+            y = rect.centery
+            damage = self.defender_damage(d)
+            if data["kind"] == "flame":
+                for z in targets:
+                    if z.x - x <= data.get("range", 185): self.hit_zombie(z, damage * .46, slow=0)
+                self.flame_particles(x + 25, y, data["color"])
+                self.spawn_effect("flame", x + 72, y, .28, .7, spin=-3)
+                d.attack = .17
+                d.cooldown = self.defender_rate(d)
+            elif data["kind"] == "shotgun":
+                for z in targets[:3]:
+                    if z.x - x <= data.get("range", 300): self.hit_zombie(z, damage * (1 if z is targets[0] else .55))
+                self.flame_particles(x + 27, y, (244, 203, 92))
+                self.spawn_effect("muzzle", x + 29, y, .18, .42, spin=15)
+                d.attack = .16
+                d.cooldown = self.defender_rate(d)
+            else:
+                target = targets[0]
+                sx = x; sy = y
+                splash = data.get("splash", 0)
+                visual = "grenade" if splash else "bullet"
+                projectile = Projectile(sx, sy, d.row, damage, 510 if data["kind"] != "mortar" else 260, data["color"], splash=splash, slow=data.get("slow", 0), pierce=data.get("pierce", 0), target_any=data["kind"] in {"mortar", "drone"}, visual=visual, angle=self.rng.uniform(0, 360))
+                self.projectiles.append(projectile)
+                d.cooldown = self.defender_rate(d)
+                self.flame_particles(sx + 20, sy, (243, 184, 65), 3)
+                self.spawn_effect("muzzle", sx + 20, sy, .16, .3, spin=18)
+                d.attack = .15
+
+    def update_projectiles(self, dt: float):
+        for p in list(self.projectiles):
+            p.x += p.speed * dt
+            if p.visual == "grenade": p.angle += 560 * dt
+            candidates = self.zombies if p.target_any else [z for z in self.zombies if z.row == p.row]
+            target = next((z for z in candidates if abs(z.x - p.x) < 26 and abs(self.cell_rect(z.row, COLS // 2).centery - p.y) < 46), None)
+            if target:
+                if p.splash:
+                    self.explode(p.x, p.y, p.damage, p.splash, p.color, p.slow)
+                else:
+                    self.hit_zombie(target, p.damage, p.slow)
+                    if p.pierce > 0:
+                        p.pierce -= 1; p.x += 30
+                        continue
+                    self.impact_particles(p.x, p.y, p.color)
+                if p in self.projectiles: self.projectiles.remove(p)
+            elif p.x > self.row_spawn_x(p.row) + 85:
+                self.projectiles.remove(p)
+
+    def hit_zombie(self, z: Zombie, damage: float, slow=0):
+        data = ZOMBIE_DATA[z.key]
+        boss = self.boss_spec(z)
+        armor = min(.70, data.get("armor", 0) + (boss or {}).get("armor", 0))
+        actual = damage * (1 - armor)
+        z.hp -= actual; z.flash = .11
+        if slow:
+            z.slow = max(z.slow, slow)
+        if z.hp <= 0: self.kill_zombie(z)
+
+    @staticmethod
+    def zombie_max_hp(z: Zombie) -> float:
+        return z.max_hp or ZOMBIE_DATA[z.key]["hp"]
+
+    def explode(self, x: float, y: float, damage: float, radius: float, color, slow=0):
+        if radius > 0:
+            effect = "water_splash" if color[2] > color[0] * 1.15 else "explosion"
+            self.spawn_effect(effect, x, y, .62, max(.7, radius / 75), spin=22)
+        for z in list(self.zombies):
+            dist = math.hypot(z.x - x, self.cell_rect(z.row, COLS // 2).centery - y)
+            if dist < radius:
+                self.hit_zombie(z, damage * (1 - dist / (radius * 1.4)), slow)
+        for _ in range(36):
+            a = self.rng.random() * math.tau; speed = self.rng.uniform(55, 230)
+            self.particles.append(Particle(x, y, math.cos(a)*speed, math.sin(a)*speed, color, self.rng.uniform(.35, .8), self.rng.uniform(2, 7)))
+
+    def kill_zombie(self, z: Zombie, allow_split=True):
+        if z not in self.zombies: return
+        boss = self.boss_spec(z)
+        self.zombies.remove(z)
+        self.kills += 1
+        ground_y = self.row_ground_y(z.row)
+        self.explode(z.x, ground_y, 0, 0, ZOMBIE_DATA[z.key]["color"])
+        self.impact_particles(z.x, ground_y, ZOMBIE_DATA[z.key]["color"], 15)
+        if boss:
+            medals = boss["medals"]
+            self.medals += medals
+            self.bosses_defeated += 1
+            self.supplies += 12 * medals
+            self.spawn_effect("explosion", z.x, ground_y, .84, 1.35, spin=27)
+            self.impact_particles(z.x, ground_y - 16, (240, 204, 92), 28)
+            self.toast_message(f"CHEFE ELIMINADO — +{medals} Medalha(s), +{12 * medals} SUP", 3.2)
+        if allow_split and ZOMBIE_DATA[z.key].get("split"):
+            split_hp = max(.70, self.zombie_max_hp(z) / ZOMBIE_DATA[z.key]["hp"] * .62)
+            for _ in range(2):
+                self.zombies.append(self.make_zombie("rastejante", z.row, z.x + self.rng.randint(-12, 12), hp_scale=split_hp, speed_scale=z.speed_scale * 1.08, damage_scale=z.damage_scale))
+        if self.rng.random() < .14:
+            self.pickups.append(Pickup(z.x, self.cell_rect(z.row, COLS // 2).centery, 5, 4))
+
+    def trigger_row_mine(self, row: int):
+        """Detonate the one-use containment mine after a row has been breached."""
+        if not self.row_mines[row]:
+            return
+        self.row_mines[row] = False
+        x, y = self.row_bounds(row)[0] - 43, self.cell_rect(row, COLS // 2).centery + 8
+        self.spawn_effect("explosion", x, y, .82, 2.45, spin=18)
+        for _ in range(58):
+            angle = self.rng.random() * math.tau
+            speed = self.rng.uniform(75, 285)
+            color = self.rng.choice(((238, 174, 70), (224, 92, 55), (111, 105, 68), (228, 207, 148)))
+            self.particles.append(Particle(x, y, math.cos(angle) * speed, math.sin(angle) * speed, color, self.rng.uniform(.35, .86), self.rng.uniform(2, 8)))
+        # It is a safety device, not just a high-damage hit.  It clears the
+        # breach zone, including a splitter, so the row does not lose in the
+        # same frame that the player sees its emergency mine work.
+        cleared = 0
+        for enemy in list(self.zombies):
+            row_left, row_right = self.row_bounds(row)
+            if enemy.row == row and enemy.x <= row_left + (row_right - row_left) / COLS * 1.7:
+                self.kill_zombie(enemy, allow_split=False)
+                cleared += 1
+        suffix = "invasor eliminado" if cleared == 1 else f"{cleared} invasores eliminados"
+        self.toast_message(f"MINA DE CONTENÇÃO DETONADA — {suffix}.", 2.5)
+
+    def hurt_defender(self, defender: Defender, damage: float, stun: float = 0, poison: float = 0):
+        """Apply a boss debuff in one place so all powers remain readable."""
+        defender.hp -= damage
+        defender.stun = max(defender.stun, stun)
+        defender.poison = max(defender.poison, poison)
+        x, y = self.cell_center(defender.row, defender.col)
+        if stun:
+            self.impact_particles(x, y, (219, 184, 87), 8)
+        if poison:
+            self.impact_particles(x, y, (132, 208, 77), 7)
+        if defender.hp <= 0 and defender in self.defenders:
+            self.defenders.remove(defender)
+
+    def cast_boss_power(self, z: Zombie):
+        boss = self.boss_spec(z)
+        if not boss:
+            return
+        power = boss["power"]
+        z.boss_power_timer = boss["interval"]
+        ground_y = self.row_ground_y(z.row)
+        line = [d for d in self.defenders if d.row == z.row]
+        frontline = max(line, key=lambda d: d.col) if line else None
+        if power == "stomp":
+            if frontline and abs(self.cell_center(frontline.row, frontline.col)[0] - z.x) < 300:
+                self.hurt_defender(frontline, 34 * z.damage_scale, stun=1.05)
+                self.spawn_effect("explosion", self.cell_center(frontline.row, frontline.col)[0], ground_y, .42, .62, spin=14)
+                self.toast_message(f"{boss['label']}: PISOTEIO!", 1.5)
+        elif power == "rally":
+            for ally in self.zombies:
+                if ally is not z and ally.row == z.row and abs(ally.x - z.x) < 400:
+                    ally.rally = max(ally.rally, 4.2)
+            self.impact_particles(z.x, ground_y - 26, (212, 112, 95), 20)
+            self.toast_message(f"{boss['label']}: horda acelerada!", 1.5)
+        elif power == "corrosion":
+            for defender in line:
+                self.hurt_defender(defender, 6 * z.damage_scale, poison=4.8)
+            self.spawn_effect("flame", z.x - 20, ground_y - 25, .52, .82, spin=0)
+            self.toast_message(f"{boss['label']}: névoa corrosiva!", 1.7)
+        elif power == "sandstorm":
+            for defender in self.defenders:
+                self.hurt_defender(defender, 0, stun=.86)
+            self.impact_particles(z.x, ground_y - 10, (232, 182, 93), 34)
+            self.toast_message(f"{boss['label']}: tempestade de areia!", 1.7)
+        elif power == "summon":
+            terrain_water = z.row in self.mission()["water_rows"]
+            candidates = [
+                key for key in self.mission()["pool"]
+                if bool(ZOMBIE_DATA[key].get("aquatic")) == terrain_water and key not in {"necromante", "tide_brute"}
+            ]
+            for i in range(2):
+                if candidates:
+                    self.zombies.append(self.make_zombie(self.rng.choice(candidates), z.row, z.x + 44 + i * 32, hp_scale=self.wave_profile["hp"] * .72, speed_scale=z.speed_scale, damage_scale=z.damage_scale * .80))
+            self.impact_particles(z.x + 22, ground_y - 20, (171, 114, 213), 22)
+            self.toast_message(f"{boss['label']}: lacaios convocados!", 1.7)
+        elif power == "quake":
+            for defender in self.defenders:
+                self.hurt_defender(defender, 17 * z.damage_scale, stun=1.10)
+            self.spawn_effect("explosion", z.x, ground_y, .58, 1.15, spin=18)
+            self.toast_message(f"{boss['label']}: abalo sísmico!", 1.7)
+        elif power == "tidal":
+            for defender in line:
+                self.hurt_defender(defender, 18 * z.damage_scale, stun=.92)
+            self.spawn_effect("water_splash", z.x - 10, ground_y, .62, 1.24, spin=18)
+            self.toast_message(f"{boss['label']}: onda de choque!", 1.7)
+
+    def update_zombies(self, dt: float):
+        for z in list(self.zombies):
+            if z not in self.zombies:
+                continue
+            data = ZOMBIE_DATA[z.key]
+            z.slow = max(0, z.slow - dt)
+            z.flash = max(0, z.flash - dt)
+            z.attack_pulse = max(0, z.attack_pulse - dt)
+            z.rally = max(0, z.rally - dt)
+            if z.boss_id:
+                z.boss_power_timer -= dt
+                if z.boss_power_timer <= 0:
+                    self.cast_boss_power(z)
+            z.walk_phase += dt * (4.0 + data["speed"] * .18 * z.speed_scale)
+            if data.get("healer") and self.rng.random() < dt * .8:
+                for ally in self.zombies:
+                    if ally is not z and ally.row == z.row and abs(ally.x-z.x) < 105:
+                        ally.hp = min(self.zombie_max_hp(ally), ally.hp + 7)
+            collided = None
+            candidates = [d for d in self.defenders if d.row == z.row and z.x <= self.cell_rect(d.row, d.col).right + 80]
+            if candidates:
+                collided = max(candidates, key=lambda d: d.col)
+            if (data.get("jump") or data.get("dig")) and not z.jumped and collided:
+                z.x -= self.cell_rect(collided.row, collided.col).width * (1.25 if data.get("jump") else .72)
+                z.jumped = True
+                collided = None
+                z.attack_pulse = .32
+                dust = (205, 160, 74) if data.get("jump") else (154, 112, 62)
+                self.impact_particles(z.x, self.row_ground_y(z.row), dust, 9)
+            if collided:
+                z.attack_timer -= dt
+                if z.attack_timer <= 0:
+                    dealt = data["damage"] * z.damage_scale * (1.15 if self.is_boss(z) else 1)
+                    collided.hp -= dealt
+                    if self.mission()["code"] == "desert" and z.key == "toxico":
+                        collided.poison = max(collided.poison, 3.6)
+                    z.attack_timer = .9 if not data.get("ranged") else .7
+                    z.attack_pulse = .34
+                    self.impact_particles(self.cell_rect(collided.row, collided.col).centerx, self.row_ground_y(z.row), (192, 77, 61), 5)
+                    if collided.hp <= 0:
+                        self.defenders.remove(collided)
+            else:
+                # The Cuspidor stops outside melee range and damages its
+                # target from afar, making it a priority instead of a walker
+                # with a different sprite.
+                ranged_targets = [d for d in self.defenders if d.row == z.row and self.cell_rect(d.row, d.col).right - 28 < z.x <= self.cell_rect(d.row, d.col).left + data.get("range", 0)]
+                if data.get("ranged") and ranged_targets:
+                    target = max(ranged_targets, key=lambda d: d.col)
+                    z.attack_timer -= dt
+                    if z.attack_timer <= 0:
+                        target.hp -= data["damage"] * z.damage_scale * .58
+                        z.attack_timer = 1.30
+                        z.attack_pulse = .38
+                        self.impact_particles(self.cell_rect(target.row, target.col).centerx, self.cell_rect(target.row, target.col).centery, (116, 200, 81), 7)
+                        if target.hp <= 0:
+                            self.defenders.remove(target)
+                    continue
+                speed = data["speed"] * z.speed_scale * (.44 if z.slow > 0 else 1)
+                if self.mission()["code"] == "city" and z.key == "corredor":
+                    speed *= 1.16  # Arrancada de avenida.
+                if self.mission()["code"] == "desert" and z.key == "feral":
+                    speed *= 1.11  # Corrida coberta pela tempestade.
+                if self.mission()["code"] == "beach" and data.get("aquatic"):
+                    speed *= 1.16  # Impulso de maré em linhas de água.
+                if data.get("flag"): speed *= 1.08
+                if z.rally > 0: speed *= 1.18
+                if any(other is not z and other.row == z.row and other.key == "bandeireiro" and abs(other.x - z.x) < 200 for other in self.zombies):
+                    speed *= 1.12
+                if any(other is not z and other.row == z.row and ZOMBIE_DATA[other.key].get("howl") and abs(other.x - z.x) < 155 for other in self.zombies):
+                    speed *= 1.07
+                z.x -= speed * dt
+            if z.x < self.row_breach_x(z.row):
+                if self.row_mines[z.row]:
+                    self.trigger_row_mine(z.row)
+                    continue
+                self.defeat(f"Linha {z.row + 1} rompida: não havia Mina de Contenção.")
+                return
+
+    def impact_particles(self, x, y, color, count=8):
+        for _ in range(count):
+            a = self.rng.random()*math.tau; sp = self.rng.uniform(30, 150)
+            self.particles.append(Particle(x, y, math.cos(a)*sp, math.sin(a)*sp, color, self.rng.uniform(.22, .55), self.rng.uniform(1.5, 4)))
+
+    def flame_particles(self, x, y, color, count=6):
+        for _ in range(count):
+            self.particles.append(Particle(x, y, self.rng.uniform(55, 155), self.rng.uniform(-30, 30), color, self.rng.uniform(.12, .27), self.rng.uniform(2, 5)))
+
+    def spawn_effect(self, key: str, x: float, y: float, life=.35, scale=1.0, angle=0.0, spin=0.0):
+        """Start a short-lived, animated PNG effect if the asset is present."""
+        if self.assets["effects"].get(key):
+            self.effects.append(Effect(key, x, y, life, life, scale, angle, spin))
+
+    def update_effects(self, dt):
+        for effect in list(self.effects):
+            effect.life -= dt
+            effect.angle += effect.spin * dt
+            if effect.life <= 0: self.effects.remove(effect)
+
+    def update_particles(self, dt):
+        for p in list(self.particles):
+            p.life -= dt; p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 75*dt
+            if p.life <= 0: self.particles.remove(p)
+
+    def draw(self):
+        if self.scene == "loading": self.draw_loading()
+        elif self.scene == "title": self.draw_title()
+        elif self.scene == "about": self.draw_about()
+        elif self.scene == "dossier_units": self.draw_dossier("units")
+        elif self.scene == "dossier_zombies": self.draw_dossier("zombies")
+        elif self.scene == "campaign": self.draw_campaign()
+        elif self.scene == "select": self.draw_selection()
+        elif self.scene == "game": self.draw_game()
+        self.draw_toast()
+        pygame.display.flip()
+
+    def backdrop(self, dim=105):
+        opening = self.assets.get("opening")
+        if opening:
+            self.screen.blit(opening, (0, 0))
+        else:
+            # The very first frame appears before disk work starts. This
+            # lightweight fallback avoids a black flash behind the loader.
+            for y in range(0, HEIGHT, 24):
+                blend = y / HEIGHT
+                color = (
+                    int(11 + 14 * blend),
+                    int(19 + 21 * blend),
+                    int(33 + 28 * blend),
+                )
+                pygame.draw.rect(self.screen, color, (0, y, WIDTH, 24))
+            pygame.draw.ellipse(self.screen, (44, 66, 84), (WIDTH // 2 - 340, 115, 680, 215))
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA); overlay.fill((8, 17, 20, dim)); self.screen.blit(overlay, (0, 0))
+
+    def draw_logo(self, center_x: int, y: int, subtitle=True):
+        self.render_text("SOLDADOS", (center_x - 164, y), "large", (235, 221, 181), center=True)
+        self.render_text("VS", (center_x, y), "med", (245, 182, 80), center=True)
+        self.render_text("ZUMBIS", (center_x + 166, y), "large", (159, 202, 104), center=True)
+        if subtitle:
+            self.render_text("DEFENDA A LINHA. SOBREVIVA À HORDA.", (center_x, y + 52), "small", (229, 203, 129), center=True)
+
+    def draw_loading(self):
+        self.backdrop(68)
+        vignette = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.rect(vignette, (4, 10, 13, 190), (0, 0, WIDTH, 94))
+        pygame.draw.rect(vignette, (4, 10, 13, 180), (0, 530, WIDTH, 190))
+        self.screen.blit(vignette, (0, 0))
+        self.panel(pygame.Rect(312, 78, 656, 151), (16, 27, 30, 222), (216, 174, 83), 18)
+        self.draw_logo(640, 108)
+        self.render_text("SISTEMA DE DEFESA TÁTICA", (640, 194), "tiny", (174, 210, 188), center=True)
+        actual_progress = self.loading_completed / max(1, self.loading_total)
+        progress = min(1.0, actual_progress)
+        self.panel(pygame.Rect(330, 539, 620, 97), (17, 29, 31, 232), (107, 142, 117), 12)
+        pygame.draw.rect(self.screen, (9, 17, 19), (361, 570, 558, 16), border_radius=8)
+        pygame.draw.rect(self.screen, (213, 171, 72), (361, 570, max(3, int(558 * progress)), 16), border_radius=8)
+        self.render_text(f"CARREGANDO OPERAÇÃO  {int(progress * 100):02d}%", (640, 552), "small", (245, 233, 191), center=True)
+        status = "SISTEMAS PRONTOS — ABRINDO MENU" if self.assets_ready else self.loading_status.upper()
+        self.render_text(status[:64], (640, 604), "tiny", (181, 208, 188), center=True)
+        self.render_text(
+            f"{self.loading_completed}/{self.loading_total} recursos preparados",
+            (640, 618), "tiny", (153, 176, 160), center=True,
+        )
+
+    def draw_title(self):
+        self.backdrop(80)
+        self.panel(pygame.Rect(42, 30, 630, 143), (15, 27, 30, 226), (214, 174, 84), 17)
+        self.draw_logo(357, 58, subtitle=False)
+        self.render_text("DEFENDA A LINHA. SOBREVIVA À HORDA.", (357, 130), "small", (220, 204, 143), center=True)
+        self.panel(pygame.Rect(43, 337, 385, 345), (16, 29, 31, 231), (103, 138, 112), 15)
+        self.render_text("MENU PRINCIPAL", (70, 354), "med", (238, 216, 142))
+        self.render_text("Escolha uma operação ou consulte o arquivo tático.", (70, 385), "tiny", (182, 207, 190))
+        self.button(self.title_button_rect(0), "JOGAR", (77, 145, 78), font="small")
+        self.button(self.title_button_rect(1), "COMO JOGAR", (151, 109, 54), font="small")
+        self.button(self.title_button_rect(2), "INFORMAÇÕES: SOLDADOS", (69, 119, 132), font="tiny")
+        self.button(self.title_button_rect(3), "INFORMAÇÕES: ZUMBIS", (132, 74, 70), font="tiny")
+        self.button(self.title_button_rect(4), "SAIR", (109, 61, 55), font="small")
+        self.panel(pygame.Rect(842, 538, 374, 126), (16, 29, 31, 229), (90, 126, 104), 13)
+        self.render_text("CAMPANHA ATIVA", (870, 555), "small", (235, 213, 142))
+        self.render_text(f"{self.progress}/{len(MISSIONS)} regiões liberadas", (870, 588), "body", (237, 241, 220))
+        self.render_text("Cidade  →  Deserto  →  Praia", (870, 621), "tiny", (167, 208, 183))
+
+    def draw_about(self):
+        self.backdrop(132)
+        self.panel(pygame.Rect(170, 72, 940, 580), (26, 38, 37), (120, 139, 108), 16)
+        self.render_text("COMO JOGAR", (640, 115), "large", (225, 205, 133), center=True)
+        paragraphs = [
+            "Antes de cada operação, escolha até 8 cartas do destacamento específico da Cidade, do Deserto ou da Praia.",
+            "Cada região tem 15 ondas. Chefes chegam nas ondas 5, 10 e 15; derrubá-los rende Medalhas.",
+            "Use a carta Instrutor Tático perto de um aliado para transformar Medalhas em promoções de campo.",
+            "",
+            "CONTROLES", "Clique numa carta e depois numa célula vazia para posicionar. Clique nos suprimentos para coletá-los.",
+            "E alterna a ferramenta de recolhimento; botão direito ou ESC cancela a carta; ESPAÇO pausa a operação.",
+            "O Engenheiro implanta uma torreta uma célula à frente; selecione-o e clique na torreta para recolhê-la.",
+            "Cada região possui elenco, zumbis, roupas, chefes e habilidades ligados ao próprio ambiente.",
+            "Na Praia, equipamentos navais entram apenas nas linhas de maré. Na Cidade, as posições seguem a avenida.",
+        ]
+        y = 174
+        for line in paragraphs:
+            style = "med" if line == "CONTROLES" else "body"
+            col = (230, 196, 108) if line == "CONTROLES" else (230, 232, 211)
+            self.render_text(line, (222, y), style, col); y += 41 if style == "med" else 30
+        self.button(pygame.Rect(516, 570, 248, 48), "VOLTAR", (83, 132, 79))
+        if pygame.mouse.get_pressed()[0] and pygame.Rect(516, 570, 248, 48).collidepoint(pygame.mouse.get_pos()):
+            pass
+
+    def render_wrapped_text(self, text: str, x: int, y: int, width: int, font="body", color=(238, 235, 216), line_gap=4) -> int:
+        """Render a concise paragraph without spilling across a dossier panel."""
+        words = text.split()
+        line = ""
+        for word in words:
+            candidate = f"{line} {word}".strip()
+            if line and self.fonts[font].size(candidate)[0] > width:
+                self.render_text(line, (x, y), font, color)
+                y += self.fonts[font].get_height() + line_gap
+                line = word
+            else:
+                line = candidate
+        if line:
+            self.render_text(line, (x, y), font, color)
+            y += self.fonts[font].get_height() + line_gap
+        return y
+
+    def unit_dossier(self, key: str) -> tuple[str, str, str, str, str]:
+        info = UNIT_DATA[key]
+        styles = {
+            "rifle": ("ATIRADOR", "Fogo direto contra alvos que entraram no alcance.", "Mantenha distância e cubra a linha."),
+            "shotgun": ("BRECHA", "Disparo de dispersão para alvos próximos.", "Proteja entradas estreitas e a primeira fileira."),
+            "splash": ("EXPLOSIVOS", "Projétil de impacto que acerta uma área.", "Guarde para grupos compactos."),
+            "mortar": ("ARTILHARIA", "Bomba de arco com dano em área.", "Use atrás da linha de frente."),
+            "flame": ("CONTROLE", "Chamas contínuas no curto alcance.", "Posicione quando a horda já estiver perto."),
+            "engineer": ("ENGENHARIA", "Constrói e recupera uma torreta de campo.", "Abra espaço à frente para a torreta."),
+            "trainer": ("COMANDO", "Promove aliados usando Medalhas de chefe.", "Proteja-o até o momento de promover."),
+            "vanguard": ("CONTENÇÃO", "Dano mínimo, blindagem e muita resistência.", "Segure a linha enquanto atiradores trabalham."),
+            "radio": ("SUPORTE", "Não ataca: converte tempo em suprimentos.", "Equilibre economia e defesa antes da horda crescer."),
+            "drone": ("VIGILÂNCIA", "Drone ataca alvos prioritários à distância.", "Use para alcançar ameaças em linhas pressionadas."),
+            "mine": ("ARMADILHA", "Explode ao contato com um inimigo.", "Coloque na rota de uma horda previsível."),
+            "medical": ("ATENDIMENTO", "Ferramenta de cura aplicada em um aliado ferido.", "Salve defensores caros antes de reposicionar."),
+            "turret": ("CONSTRUÇÃO", "Torreta automática liberada pelo Engenheiro.", "Ela não é uma carta comprável separada."),
+        }
+        category, attack, tactic = styles.get(info["kind"], ("ESPECIALISTA", "Ação tática de campo.", "Use conforme a pressão da linha."))
+        if info.get("tool"):
+            stats = f"Custo: {info['cost']} SUP • Cura: 180 HP"
+        elif info["damage"] <= 0:
+            stats = f"Custo: {info['cost']} SUP • Vida: {info['hp']}"
+        else:
+            stats = f"Custo: {info['cost']} SUP • Dano: {info['damage']} • Ação a cada {info['rate']:.2f}s"
+        if "range" in info:
+            stats += f" • Alcance: {info['range']:.0f}px"
+        if info.get("max_total"):
+            stats += f" • Limite: {info['max_total']}"
+        return category, attack, info.get("ability", "Sem habilidade registrada."), tactic, stats
+
+    def zombie_dossier(self, key: str) -> tuple[str, str, str, str, str]:
+        data = ZOMBIE_DATA[key]
+        family = {
+            "caminhante": "COMUM", "corredor": "RÁPIDO", "rastejante": "RASTEJANTE",
+            "bruto": "PESO-PESADO", "blindado": "BLINDADO", "porta_escudo": "BLOQUEADOR",
+            "cuspidor": "TÓXICO", "divisor": "TÓXICO", "gritador": "SUPORTE",
+            "pulador": "SALTADOR", "necromante": "ARCANO", "sandstalker": "ESCAVADOR",
+            "feral": "FERAL", "nadador": "AQUÁTICO", "tide_brute": "AQUÁTICO",
+            "conehead": "BLINDADO", "bandeireiro": "SUPORTE", "escavadeira": "ESCAVADOR",
+            "doutor_zumbi": "CURANDEIRO", "general_morto": "COMANDANTE",
+            "mutante_titan": "COLOSSO", "toxico": "TÓXICO",
+        }.get(key, "AMEAÇA")
+        attack = "Ataque corpo a corpo ao alcançar uma defesa."
+        if data.get("ranged"):
+            attack = "Projétil corrosivo contra uma defesa dentro do alcance."
+        if data.get("boss"):
+            attack = "Ataque pesado de chefe ao alcançar a linha de contenção."
+        powers: list[str] = []
+        if data.get("armor"): powers.append(f"armadura reduz {int(data['armor'] * 100)}% do dano")
+        if data.get("jump"): powers.append("salta a defesa da frente")
+        if data.get("dig"): powers.append("usa rota subterrânea")
+        if data.get("healer"): powers.append("cura aliados próximos")
+        if data.get("howl"): powers.append("acelera a horda")
+        if data.get("split"): powers.append("divide a ameaça ao cair")
+        if data.get("flag"): powers.append("reúne os aliados")
+        if data.get("aquatic"): powers.append("opera nas linhas de água")
+        if data.get("boss"): powers.append("executa um poder de chefe")
+        power = "; ".join(powers).capitalize() if powers else "Avanço direto em direção à defesa."
+        counter = "Concentre fogo antes que alcance a primeira defesa."
+        if data.get("armor"): counter = "Use dano concentrado ou explosivos contra a proteção."
+        elif data.get("ranged"): counter = "Não deixe que ele permaneça em alcance de ataque."
+        elif data.get("jump") or data.get("dig"): counter = "Mantenha uma segunda camada de defesa na retaguarda."
+        elif data.get("healer") or data.get("howl"): counter = "Elimine-o cedo para não fortalecer a horda."
+        stats = f"Vida-base: {data['hp']} • Velocidade: {data['speed']} • Dano: {data['damage']}"
+        return family, attack, power, counter, stats
+
+    def draw_dossier(self, kind: str):
+        is_units = kind == "units"
+        title = "INFORMAÇÕES DOS SOLDADOS" if is_units else "INFORMAÇÕES DOS ZUMBIS"
+        subtitle = "Arquivo tático: ataques, poderes e uso em combate." if is_units else "Arquivo de ameaça: ataques, poderes e resposta tática."
+        accent = (91, 173, 183) if is_units else (192, 92, 77)
+        self.backdrop(158)
+        self.panel(pygame.Rect(34, 27, 1200, 94), (21, 34, 36, 238), accent, 14)
+        self.render_text(title, (62, 44), "large", (239, 219, 151))
+        self.render_text(subtitle, (64, 92), "small", (193, 214, 197))
+        self.panel(pygame.Rect(34, 139, 536, 480), (21, 34, 36, 240), (101, 133, 113), 13)
+        self.render_text("SELECIONE UMA FICHA", (58, 151), "small", (226, 213, 161))
+        self.render_text("Clique em um retrato para ver os detalhes.", (58, 177), "tiny", (169, 194, 178))
+        for index, key in enumerate(self.dossier_page_keys()):
+            rect = self.dossier_item_rect(index)
+            selected = key == self.dossier_key
+            self.panel(rect, (35, 50, 51), accent if selected else (91, 112, 99), 8)
+            image = self.unit_image(key) if is_units else self.zombie_image(key)
+            portrait = self.fit_image(image, (52, 62))
+            self.screen.blit(portrait, portrait.get_rect(center=(rect.x + 36, rect.centery + 2)))
+            label = UNIT_DATA[key]["label"] if is_units else ZOMBIE_DATA[key]["label"]
+            self.render_text(label.upper()[:24], (rect.x + 71, rect.y + 17), "tiny", (241, 238, 217))
+            family = self.unit_dossier(key)[0] if is_units else self.zombie_dossier(key)[0]
+            self.render_text(family, (rect.x + 71, rect.y + 47), "tiny", accent)
+
+        self.panel(pygame.Rect(589, 139, 645, 480), (22, 35, 37, 242), accent, 13)
+        key = self.dossier_key or (self.dossier_page_keys()[0] if self.dossier_page_keys() else None)
+        if key:
+            image = self.unit_image(key) if is_units else self.zombie_image(key)
+            category, attack, power, tactic, stats = self.unit_dossier(key) if is_units else self.zombie_dossier(key)
+            label = UNIT_DATA[key]["label"] if is_units else ZOMBIE_DATA[key]["label"]
+            portrait_box = pygame.Rect(614, 194, 202, 337)
+            self.panel(portrait_box, (28, 43, 44), (83, 109, 96), 11)
+            portrait = self.fit_image(image, (174, 240))
+            self.screen.blit(portrait, portrait.get_rect(center=(portrait_box.centerx, portrait_box.centery + 12)))
+            self.render_text(label.upper(), (844, 167), "med", (245, 226, 166))
+            self.render_text(category, (844, 201), "tiny", accent)
+            y = 237
+            for heading, body in (("ATAQUE", attack), ("PODER", power), ("TÁTICA", tactic), ("DADOS", stats)):
+                self.render_text(heading, (844, y), "tiny", accent)
+                y = self.render_wrapped_text(body, 844, y + 18, 353, "small", (227, 233, 215), 3) + 12
+
+        page_text = f"PÁGINA {self.dossier_page + 1}/{self.dossier_page_count()}"
+        self.button(self.dossier_back_rect(), "VOLTAR", (99, 108, 82), font="small")
+        self.button(self.dossier_previous_rect(), "< ANTERIOR", (82, 105, 95), self.dossier_page > 0, "tiny")
+        self.button(self.dossier_next_rect(), "PRÓXIMA >", (82, 105, 95), self.dossier_page < self.dossier_page_count() - 1, "tiny")
+        self.render_text(page_text, (635, 660), "small", (225, 214, 169), center=True)
+
+    def draw_campaign(self):
+        self.backdrop(128)
+        self.panel(pygame.Rect(49, 31, 1182, 91), (27, 40, 39, 238), (120, 139, 108), 13)
+        self.render_text("MAPA DA CAMPANHA", (79, 47), "large", (232, 211, 139))
+        self.render_text("As regiões são desbloqueadas em sequência. Operações liberadas também podem ser repetidas.", (81, 94), "small", (199, 213, 194))
+        self.render_text(f"PROGRESSO: {self.progress}/{len(MISSIONS)}", (1066, 70), "med", (171, 207, 108), center=True)
+        for i, mission in enumerate(MISSIONS):
+            rect = self.campaign_rect(i)
+            unlocked = i + 1 <= self.progress
+            fill = (35, 55, 52) if unlocked else (30, 34, 35)
+            self.panel(rect, fill, (177, 164, 107) if unlocked else (67, 74, 71), 14)
+            tile = self.assets["scenes"].get(mission["code"]) or self.assets["terrain"][mission["code"]]
+            tile = pygame.transform.smoothscale(tile, (rect.width - 28, 114))
+            self.screen.blit(tile, (rect.x + 14, rect.y + 16))
+            layer = pygame.Surface((rect.width - 28, 114), pygame.SRCALPHA); layer.fill((0, 0, 0, 68 if unlocked else 150)); self.screen.blit(layer, (rect.x + 14, rect.y + 16))
+            self.render_text(str(i + 1), (rect.x + 30, rect.y + 36), "large", (235, 215, 142))
+            self.render_text(mission["name"].upper(), (rect.centerx, rect.y + 151), "med", (238, 230, 203), center=True)
+            self.render_text(mission["title"], (rect.centerx, rect.y + 178), "small", (170, 209, 144) if unlocked else (119, 126, 119), center=True)
+            words = mission["desc"].split()
+            line, y = "", rect.y + 210
+            for word in words:
+                if len(line + word) > 30:
+                    self.render_text(line, (rect.x + 18, y), "tiny", (196, 205, 191) if unlocked else (101, 108, 104)); y += 17; line = ""
+                line += word + " "
+            self.render_text(line, (rect.x + 18, y), "tiny", (196, 205, 191) if unlocked else (101, 108, 104))
+            self.button(pygame.Rect(rect.x + 36, rect.bottom - 58, rect.width - 72, 35), "PREPARAR" if unlocked else "BLOQUEADA", (79, 135, 70) if unlocked else (58, 62, 60), unlocked, "small")
+        self.button(pygame.Rect(72, 620, 230, 42), "VOLTAR", (100, 107, 81), font="small")
+        self.button(pygame.Rect(972, 620, 235, 42), "REINICIAR PROGRESSO", (141, 72, 56), font="small")
+
+    def draw_selection(self):
+        mission = MISSIONS[self.stage]
+        self.backdrop(150)
+        self.panel(pygame.Rect(42, 22, 1196, 105), (25, 39, 39, 240), (130, 148, 111), 13)
+        self.render_text("SELEÇÃO DO DESTACAMENTO", (70, 38), "large", (231, 208, 132))
+        self.render_text(f"{mission['title']} • {mission['name'].upper()}", (72, 86), "small", (168, 207, 143))
+        self.render_text(f"ESQUADRÃO: {len(self.selection)}/8", (1090, 51), "med", (241, 231, 195), center=True)
+        self.render_text("15 ONDAS • CHEFES: 5 / 10 / 15", (1010, 85), "small", (231, 199, 105), center=True)
+        self.render_text(ENVIRONMENT_STYLE[mission["code"]]["uniform"], (642, 91), "tiny", (190, 202, 171), center=True)
+        for i, key in enumerate(self.available_units()):
+            info = UNIT_DATA[key]
+            rect = self.selection_rect(i); chosen = key in self.selection
+            card_color = info["color"] if chosen else tuple(max(15, c // 2) for c in info["color"])
+            self.panel(rect, (39, 48, 45), (237, 207, 114) if chosen else card_color, 8)
+            thumb = self.fit_image(self.unit_image(key), (78, 92))
+            self.screen.blit(thumb, thumb.get_rect(center=(rect.x + 46, rect.centery)))
+            label = self.unit_label(key).upper()
+            self.render_text(label[:22], (rect.x + 93, rect.y + 15), "tiny", (243, 236, 207))
+            type_label = f"SUPORTE • N{info.get('tier', 2)}" if info["kind"] == "radio" else "FERRAMENTA" if info.get("tool") else ("COSTA / ÁGUA" if info.get("aquatic") else mission["name"].upper())
+            self.render_text(type_label, (rect.x + 93, rect.y + 35), "tiny", (112, 204, 222) if info.get("aquatic") else (226, 106, 95) if info.get("tool") else (160, 188, 135))
+            self.render_text(f"{info['cost']} SUP", (rect.x + 93, rect.y + 55), "small", (235, 189, 68))
+            if chosen:
+                self.render_text("✓ SELECIONADA", (rect.x + 93, rect.y + 80), "tiny", (207, 237, 142))
+            else:
+                ability = info.get("ability", f"DMG {info['damage']}")
+                self.render_text(ability[:19], (rect.x + 93, rect.y + 80), "tiny", (177, 191, 174))
+        self.button(pygame.Rect(98, 630, 200, 50), "VOLTAR", (102, 104, 75))
+        self.panel(pygame.Rect(375, 630, 430, 50), (38, 49, 43), (136, 151, 104), 8)
+        self.render_text("MEDALHAS PROMOVEM UNIDADES EM CAMPO", (590, 655), "small", (221, 212, 157), center=True)
+        self.button(pygame.Rect(908, 630, 270, 50), "INICIAR OPERAÇÃO", (79, 141, 71))
+
+    def draw_game(self):
+        self.draw_game_background()
+        self.draw_board()
+        self.draw_game_hud()
+        self.draw_defenders()
+        self.draw_projectiles()
+        self.draw_zombies()
+        self.draw_effects()
+        self.draw_pickups()
+        self.draw_particles()
+        if self.selected_card or self.remove_mode: self.draw_cursor_hint()
+        if self.banner > 0 and not self.end_state:
+            self.panel(pygame.Rect(455, 130, 370, 36), (58, 34, 31), (230, 173, 77), 8)
+            self.render_text(f"ONDA {self.wave}/{self.total_waves}", (640, 148), "med", (255, 225, 134), center=True)
+        if self.paused and not self.end_state:
+            self.draw_pause()
+        if self.end_state: self.draw_end_overlay()
+
+    def draw_game_background(self):
+        mission = MISSIONS[self.stage]
+        code = mission["code"]
+        palette = {"city": (44, 43, 39), "desert": (122, 78, 36), "beach": (25, 91, 108)}[code]
+        scene = self.assets["scenes"].get(code)
+        if scene:
+            self.screen.blit(scene, (0, 0))
+            tint = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            tint.fill((*palette, 14))
+            self.screen.blit(tint, (0, 0))
+        else:
+            self.screen.fill(palette)
+        atmosphere = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        for i in range(22):
+            x = int((i * 173 + self.time * (18 if code != "city" else 10)) % (WIDTH + 80)) - 40
+            y = 155 + (i * 71) % 550
+            if code == "desert":
+                pygame.draw.circle(atmosphere, (240, 189, 101, 62), (x, y), 2 + i % 2)
+            elif code == "beach":
+                pygame.draw.arc(atmosphere, (174, 229, 236, 105), (x, y, 48, 12), 0, math.pi, 1)
+            else:
+                pygame.draw.circle(atmosphere, (216, 195, 156, 38), (x, y), 1 + i % 2)
+        self.screen.blit(atmosphere, (0, 0))
+
+    def draw_board(self):
+        mission = MISSIONS[self.stage]
+        field = pygame.Rect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H)
+        # The scenery itself is the battlefield: a road, dirt track or beach.
+        # No framed board is painted over it; the grid remains input-only.
+        if mission["code"] != "city":
+            self.screen.blit(self.ground_layers[mission["code"]], field)
+
+        if mission["code"] == "beach":
+            # Fine moving ripples keep the tidal lanes alive without bringing
+            # back blue tiles or a separate water rectangle.
+            ripples = pygame.Surface((BOARD_W, CELL_H * 3), pygame.SRCALPHA)
+            for i in range(20):
+                x = int((i * 91 + self.time * 44) % (BOARD_W + 110)) - 55
+                y = 5 + (i * 31) % (CELL_H * 3 - 12)
+                width = 28 + (i * 17) % 68
+                pygame.draw.arc(ripples, (190, 236, 238, 105), (x, y, width, 10), .12, math.pi - .12, 1)
+            self.screen.blit(ripples, (BOARD_X, BOARD_Y + CELL_H))
+
+        # The City containment posts follow the expanding avenue edge.  This
+        # replaces the old vertical rail that made the foreground feel
+        # detached from the perspective of the street.
+        mine_points = [(self.row_bounds(r)[0] - 43, self.cell_rect(r, COLS // 2).centery + 5) for r in range(ROWS)]
+        if mission["code"] == "city":
+            road_edge = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            pygame.draw.lines(road_edge, (15, 19, 20, 145), False, mine_points, 14)
+            pygame.draw.lines(road_edge, (218, 184, 104, 150), False, mine_points, 2)
+            self.screen.blit(road_edge, (0, 0))
+        else:
+            rail = pygame.Surface((82, BOARD_H - 16), pygame.SRCALPHA)
+            rail_color = {"desert": (103, 68, 37, 130), "beach": (43, 86, 82, 118)}[mission["code"]]
+            rail.fill(rail_color)
+            pygame.draw.line(rail, (219, 186, 102, 150), (41, 8), (41, rail.get_height() - 8), 2)
+            self.screen.blit(rail, (BOARD_X - 103, BOARD_Y + 8))
+        for r in range(ROWS):
+            mine_x, cy = mine_points[r]
+            if self.row_mines[r]:
+                glow = pygame.Surface((82, 52), pygame.SRCALPHA)
+                alpha = int(44 + 30 * (1 + math.sin(self.time * 4.3 + r)) / 2)
+                pygame.draw.ellipse(glow, (244, 164, 58, alpha), (14, 11, 56, 28))
+                self.screen.blit(glow, (mine_x - 41, cy - 12))
+                mine = self.assets["props"].get("mina_contencao")
+                if mine:
+                    self.screen.blit(mine, mine.get_rect(center=(mine_x, cy + 5)))
+                else:
+                    pygame.draw.circle(self.screen, (79, 92, 49), (mine_x, cy + 4), 17)
+                    pygame.draw.circle(self.screen, (241, 163, 55), (mine_x + 8, cy - 3), 4)
+            else:
+                pygame.draw.ellipse(self.screen, (27, 29, 23), (mine_x - 28, cy - 5, 56, 22))
+                pygame.draw.ellipse(self.screen, (76, 65, 45), (mine_x - 21, cy - 1, 42, 13))
+                pygame.draw.circle(self.screen, (118, 81, 51), (mine_x - 12, cy + 4), 3)
+                pygame.draw.circle(self.screen, (93, 95, 70), (mine_x + 9, cy + 8), 2)
+        if self.selected_card:
+            mouse_cell = self.board_cell(pygame.mouse.get_pos())
+            if mouse_cell:
+                row, col = mouse_cell
+                rect = self.cell_rect(row, col)
+                info = UNIT_DATA[self.selected_card]
+                water = row in mission["water_rows"]
+                valid = not self.defender_at(row, col) and (not info.get("aquatic") or water) and (info.get("aquatic") or not water)
+                color = (132, 223, 128, 78) if valid else (228, 106, 87, 88)
+                halo = pygame.Surface(rect.size, pygame.SRCALPHA)
+                ellipse_rect = pygame.Rect(10, 22, max(1, rect.width - 20), CELL_H - 34)
+                pygame.draw.ellipse(halo, color, ellipse_rect)
+                pygame.draw.ellipse(halo, (240, 238, 183, 150) if valid else (239, 147, 119, 160), ellipse_rect, 2)
+                self.screen.blit(halo, rect)
+
+    def draw_game_hud(self):
+        mission = MISSIONS[self.stage]
+        self.panel(pygame.Rect(18, 16, 1244, 48), (23, 34, 33), (123, 139, 108), 10)
+        self.render_text("SOLDADOS VS ZUMBIS", (33, 27), "med", (231, 211, 133))
+        self.render_text(mission["title"].upper(), (34, 49), "tiny", (165, 204, 145))
+        self.render_text(f"ONDA {self.wave}/{self.total_waves}", (602, 40), "med", (240, 223, 178), center=True)
+        self.render_text(f"ZUMBIS: {len(self.zombies) + len(self.queue)}", (788, 30), "small", (224, 117, 96))
+        self.render_text(f"BAIXAS: {self.kills}", (788, 50), "tiny", (181, 191, 176))
+        self.render_text(f"MEDALHAS: {self.medals}", (902, 50), "tiny", (239, 205, 103))
+        self.render_text("E: RECOLHER  •  ESPAÇO: PAUSAR  •  BOTÃO DIREITO: CANCELAR", (1045, 40), "tiny", (179, 193, 178), center=True)
+        self.panel(pygame.Rect(23, 73, 176, 48), (44, 56, 43), (184, 157, 77), 8)
+        self.render_text("SUP", (35, 81), "tiny", (226, 207, 137))
+        self.render_text(str(self.supplies), (35, 97), "med", (245, 196, 65))
+        self.render_text("MINAS", (112, 81), "tiny", (226, 207, 137))
+        mines_color = (182, 221, 128) if any(self.row_mines) else (230, 109, 88)
+        self.render_text(f"{sum(self.row_mines)}/{ROWS}", (112, 99), "med", mines_color)
+        self.button(pygame.Rect(23, 124, 172, 31), "RECOLHER: " + ("LIGADO" if self.remove_mode else "DESLIGADO"), (130, 75, 56) if self.remove_mode else (78, 98, 77), font="tiny")
+        self.button(pygame.Rect(24, 158, 171, 31), "RETOMAR" if self.paused else "PAUSAR", (91, 98, 74), font="tiny")
+        for i, key in enumerate(self.selection):
+            info = UNIT_DATA[key]; rect = self.card_rect(i)
+            selected = key == self.selected_card
+            cooling = self.card_cooldowns.get(key, 0)
+            self.panel(rect, (42, 51, 48), (235, 200, 90) if selected else info["color"], 7)
+            img = self.fit_image(self.unit_image(key), (50, 57)); self.screen.blit(img, img.get_rect(center=(rect.x + 28, rect.y + 48)))
+            label = self.unit_label(key).upper()
+            if len(label) > 15: label = label[:14] + "."
+            self.render_text(label, (rect.x+55, rect.y+11), "tiny", (242, 238, 215))
+            self.render_text(f"{info['cost']} SUP", (rect.x+55, rect.y+29), "tiny", (242, 195, 68))
+            tag = f"SUP N{info.get('tier', 2)}" if info["kind"] == "radio" else "ÁGUA" if info.get("aquatic") else "CURA" if info.get("tool") else self.mission()["name"].upper()
+            self.render_text(tag, (rect.x+55, rect.y+47), "tiny", (117, 205, 219) if tag == "ÁGUA" else (222, 103, 93) if tag == "CURA" else (160, 194, 140))
+            if cooling > 0:
+                cooldown_window = info.get("cooldown", 2.6)
+                h = int(59 * min(1, cooling / cooldown_window)); shade = pygame.Surface((52, h), pygame.SRCALPHA); shade.fill((8, 15, 15, 165)); self.screen.blit(shade, (rect.x+2, rect.y+17))
+                self.render_text(f"{cooling:.1f}", (rect.x+28, rect.y+48), "tiny", (240, 235, 214), center=True)
+
+    def draw_defenders(self):
+        for d in self.defenders:
+            rect = self.cell_rect(d.row, d.col)
+            bob = int(math.sin(self.time*3 + d.col) * 2)
+            image = self.unit_image(d.key)
+            recoil = int(5 * min(1, d.attack / .16))
+            image_rect = image.get_rect(midbottom=(rect.centerx + 3 - recoil, rect.bottom - 6 + bob))
+            self.screen.blit(image, image_rect)
+            bar_w = min(76, max(52, rect.width - 28))
+            self.draw_health(rect.centerx - bar_w // 2, rect.bottom - 13, bar_w, d.hp, self.defender_max_hp(d.key, d.rank), (91, 206, 101))
+            if d.rank > 1:
+                stars = "★" * d.rank
+                self.render_text(stars, (rect.centerx, rect.bottom - 28), "tiny", (242, 206, 91), center=True)
+            if d.poison > 0:
+                pygame.draw.circle(self.screen, (130, 211, 83), (image_rect.right - 8, image_rect.y + 14), 4)
+            if d.stun > 0:
+                pygame.draw.circle(self.screen, (239, 205, 88), (image_rect.left + 8, image_rect.y + 14), 4)
+
+    def draw_zombies(self):
+        for z in self.zombies:
+            data = ZOMBIE_DATA[z.key]
+            img = self.zombie_image(z.key).copy()
+            if z.flash > 0:
+                flash = pygame.Surface(img.get_size(), pygame.SRCALPHA); flash.fill((255, 238, 208, 85)); img.blit(flash, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            # The pose includes more than a bob: every archetype changes its
+            # horizontal stride, lean, vertical movement, ground effect and
+            # attack lunge.  It makes a static PNG read like a living threat.
+            phase = z.walk_phase
+            motion = data.get("motion", "shamble")
+            stride = math.sin(phase * 1.35)
+            bob, lean, scale, sway = 0.0, 0.0, 1.0, 0.0
+            if motion == "sprint":
+                bob, lean, sway = abs(math.sin(phase * 1.7)) * 5.8, stride * 4.2, stride * 4.6
+            elif motion == "crawl":
+                bob, lean, scale, sway = abs(math.sin(phase * 1.8)) * 1.8, stride * 2.2, .98, stride * 3.2
+            elif motion == "swim":
+                bob, lean, scale, sway = math.sin(phase * 1.2) * 5.5, stride * 2.1, 1.02 + math.sin(phase * 1.2) * .025, stride * 2.6
+            elif motion == "stomp":
+                bob, lean, sway = abs(math.sin(phase * .75)) * 3.4, stride * 1.25, stride * 1.3
+            elif motion == "leap":
+                bob, lean, sway = abs(math.sin(phase * 1.35)) * 10.5, stride * 4.4, stride * 5.8
+            else:
+                bob, lean, sway = math.sin(phase * 1.15) * 2.8, stride * 2.2, stride * 2.4
+            if self.is_boss(z):
+                scale *= 1.16
+            lunge = 0.0
+            if z.attack_pulse > 0:
+                punch = min(1, z.attack_pulse / .38)
+                lean -= 7.0 * punch
+                scale += .045 * punch
+                lunge = 11.0 * punch
+            if abs(lean) > .05 or abs(scale - 1) > .005:
+                img = pygame.transform.rotozoom(img, lean, scale)
+            ground_y = self.row_ground_y(z.row)
+            shadow_w = max(28, int(img.get_width() * (.48 + abs(stride) * .12)))
+            shadow_h = 9 if motion != "swim" else 7
+            shadow_alpha = 75 if motion == "swim" else 105
+            shadow = pygame.Surface((shadow_w + 8, shadow_h + 6), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow, (6, 13, 14, shadow_alpha), (4, 2, shadow_w, shadow_h))
+            self.screen.blit(shadow, (int(z.x - shadow_w / 2 - 4), int(ground_y - 3)))
+            if motion == "swim":
+                for wave in range(2):
+                    width = 38 + wave * 14 + int(abs(stride) * 8)
+                    pygame.draw.arc(self.screen, (184, 235, 234), (int(z.x - width / 2), int(ground_y - 2 + wave * 5), width, 10), .10, math.pi - .10, 1)
+            elif motion in {"sprint", "crawl", "leap"} and abs(stride) > .58:
+                dust_color = (208, 171, 108) if self.mission()["code"] == "desert" else (127, 143, 128)
+                pygame.draw.ellipse(self.screen, dust_color, (int(z.x + 18), int(ground_y - 2), 12, 4))
+            elif motion == "stomp" and abs(stride) > .88:
+                pygame.draw.arc(self.screen, (184, 137, 82), (int(z.x - 27), int(ground_y - 6), 54, 16), .15, math.pi - .15, 1)
+            image_rect = img.get_rect(midbottom=(int(z.x + sway - lunge), int(ground_y + bob)))
+            self.screen.blit(img, image_rect)
+            if z.attack_pulse > 0:
+                claw = pygame.Surface((52, 44), pygame.SRCALPHA)
+                pygame.draw.arc(claw, (231, 91, 70, 205), (5, 4, 37, 31), .25, 1.75, 3)
+                pygame.draw.arc(claw, (246, 167, 93, 145), (12, 11, 31, 26), .25, 1.75, 2)
+                self.screen.blit(claw, (image_rect.left - 30, image_rect.centery - 23))
+            if self.mission()["code"] == "desert" and z.key == "toxico":
+                pygame.draw.circle(self.screen, (149, 225, 81), (image_rect.centerx + 6, image_rect.bottom - 26), 4 + int(abs(stride) * 2), 1)
+            if data.get("howl"):
+                pygame.draw.arc(self.screen, (205, 170, 226), (image_rect.left - 13, image_rect.y + 13, 27, 25), -1.1, 1.1, 1)
+            maxhp = self.zombie_max_hp(z)
+            bar_w = max(68, min(110, img.get_width() - 10))
+            self.draw_health(int(image_rect.centerx - bar_w // 2), image_rect.y - 6, bar_w, z.hp, maxhp, (218, 82, 67))
+            if self.is_boss(z):
+                boss = self.boss_spec(z)
+                label = self.boss_label(z).upper()
+                self.render_text(label, (int(image_rect.centerx), image_rect.y-22), "tiny", (244, 185, 95), center=True)
+                if boss:
+                    remaining = max(0, z.boss_power_timer)
+                    self.render_text(f"{boss['power'].upper()} {remaining:.1f}s", (int(image_rect.centerx), image_rect.y-10), "tiny", (232, 203, 139), center=True)
+            if z.slow > 0:
+                pygame.draw.circle(self.screen, (159, 231, 247), (int(image_rect.centerx), image_rect.bottom - 10), 7, 1)
+
+    def draw_projectiles(self):
+        for p in self.projectiles:
+            sprite = self.assets["effects"].get(p.visual)
+            if sprite:
+                side = 44 if p.visual == "grenade" else 32 if p.visual == "bullet" else 50
+                image = pygame.transform.smoothscale(sprite, (side, side))
+                if p.visual == "grenade": image = pygame.transform.rotate(image, p.angle)
+                self.screen.blit(image, image.get_rect(center=(int(p.x), int(p.y))))
+            else:
+                pygame.draw.line(self.screen, tuple(max(0, c-40) for c in p.color), (int(p.x-13), int(p.y)), (int(p.x), int(p.y)), 3)
+                pygame.draw.circle(self.screen, p.color, (int(p.x), int(p.y)), 5)
+
+    def draw_pickups(self):
+        for pick in self.pickups:
+            bob = int(math.sin(self.time*4 + pick.x)*4)
+            rect = pygame.Rect(int(pick.x-22), int(pick.y-18+bob), 44, 36)
+            self.panel(rect, (123, 91, 39), (239, 203, 89), 7)
+            pygame.draw.circle(self.screen, (245, 201, 69), (rect.x+13, rect.centery), 8)
+            self.render_text(f"+{pick.amount}", (rect.x+24, rect.y+10), "tiny", (252, 241, 184))
+
+    def draw_particles(self):
+        for p in self.particles:
+            alpha = max(0, min(255, int(p.life * 350)))
+            surf = pygame.Surface((int(p.size*3+2), int(p.size*3+2)), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*p.color, alpha), (surf.get_width()//2, surf.get_height()//2), max(1, int(p.size)))
+            self.screen.blit(surf, (p.x-surf.get_width()//2, p.y-surf.get_height()//2))
+
+    def draw_effects(self):
+        for effect in self.effects:
+            sprite = self.assets["effects"].get(effect.key)
+            if not sprite: continue
+            progress = 1 - effect.life / effect.max_life
+            expansion = 1 + progress * (.58 if effect.key in {"explosion", "water_splash", "heal"} else .16)
+            side = max(12, int(96 * effect.scale * expansion))
+            image = pygame.transform.smoothscale(sprite, (side, side))
+            if effect.angle: image = pygame.transform.rotate(image, effect.angle)
+            image.set_alpha(max(0, min(255, int(255 * min(1, effect.life / (effect.max_life * .35))))))
+            self.screen.blit(image, image.get_rect(center=(int(effect.x), int(effect.y))))
+
+    def draw_health(self, x, y, w, hp, max_hp, color):
+        pygame.draw.rect(self.screen, (17, 23, 22), (x-1, y-1, w+2, 7), border_radius=3)
+        pygame.draw.rect(self.screen, (70, 79, 69), (x, y, w, 5), border_radius=2)
+        pygame.draw.rect(self.screen, color, (x, y, int(w*max(0,hp)/max_hp), 5), border_radius=2)
+
+    def draw_cursor_hint(self):
+        if self.remove_mode:
+            label = "RECOLHER UNIDADE"
+        elif self.selected_card == "engenheiro":
+            label = "ENGENHEIRO: POSICIONAR OU RECOLHER TORRETA"
+        else:
+            label = f"POSICIONAR: {self.unit_label(self.selected_card)}"
+        col = (223, 112, 92) if self.remove_mode else (174, 219, 137)
+        self.panel(pygame.Rect(452, 656, 376, 33), (31, 39, 37), col, 7)
+        self.render_text(label + "  •  clique em uma célula", (640, 672), "small", (243, 238, 214), center=True)
+
+    def draw_pause(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA); overlay.fill((5, 10, 10, 125)); self.screen.blit(overlay, (0,0))
+        self.panel(pygame.Rect(475, 292, 330, 108), (29, 42, 40), (215, 181, 94), 12)
+        self.render_text("OPERAÇÃO PAUSADA", (640, 327), "large", (242, 223, 158), center=True)
+        self.render_text("Pressione ESPAÇO ou o botão Pausar para continuar.", (640, 368), "small", (208, 218, 198), center=True)
+
+    def draw_end_overlay(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA); overlay.fill((4, 10, 11, 180)); self.screen.blit(overlay, (0,0))
+        self.panel(pygame.Rect(382, 214, 516, 355), (31, 43, 39), (220, 182, 93) if self.end_state == "victory" else (203, 83, 68), 15)
+        if self.end_state == "victory":
+            title = "OPERAÇÃO CONCLUÍDA"
+            body = "A posição foi mantida. O caminho para a próxima região está aberto."
+            if self.stage == len(MISSIONS) - 1: body = "A campanha foi concluída. A praia está segura — por enquanto."
+            color = (222, 218, 133)
+        else:
+            title, body, color = "GAME OVER", self.defeat_reason or "Uma linha de contenção foi rompida.", (231, 108, 91)
+        self.render_text(title, (640, 273), "large", color, center=True)
+        if self.end_state == "defeat":
+            self.render_text("BASE TOMADA", (640, 317), "med", (245, 187, 130), center=True)
+            self.render_text(body, (640, 349), "small", (228, 231, 212), center=True)
+            self.render_text(f"Minas de contenção restantes: {sum(self.row_mines)}/{ROWS}", (640, 382), "small", (198, 204, 180), center=True)
+            self.render_text("Mantenha soldados na linha ou preserve a mina de retaguarda.", (640, 410), "tiny", (172, 192, 173), center=True)
+        else:
+            self.render_text(body, (640, 331), "body", (228, 231, 212), center=True)
+            self.render_text("Escolha uma opção para continuar.", (640, 374), "small", (172, 192, 173), center=True)
+        self.button(pygame.Rect(481, 518, 160, 49), "TENTAR NOVAMENTE", (91, 137, 73), font="tiny")
+        self.button(pygame.Rect(655, 518, 160, 49), "MAPA", (115, 101, 67), font="small")
+
+    def draw_toast(self):
+        if self.toast_timer <= 0 or not self.toast: return
+        surface = self.fonts["small"].render(self.toast, True, (248, 239, 201))
+        rect = surface.get_rect(center=(WIDTH//2, HEIGHT-24))
+        self.panel(rect.inflate(32, 16), (37, 47, 43), (131, 149, 108), 7)
+        self.screen.blit(surface, rect)
+
+    def run(self):
+        while self.running:
+            dt = min(.05, self.clock.tick(FPS) / 1000)
+            for event in pygame.event.get(): self.event(event)
+            self.update(dt)
+            self.draw()
+        pygame.quit()
 
 
 if __name__ == "__main__":

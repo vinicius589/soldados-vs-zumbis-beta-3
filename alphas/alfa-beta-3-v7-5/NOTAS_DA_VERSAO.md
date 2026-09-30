@@ -1,4 +1,4 @@
-# Alfa após Beta 2 — minas e curva de dificuldade
+# Alfa da Beta 3 (v7.5) — minas e curva de dificuldade
 
 Correções descritas no `README.md` da v7.5:
 

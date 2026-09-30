@@ -1,18 +1,23 @@
-# Beta 2 — evolução de tropas e combate regional
+# Beta 2 — abertura e consulta ao elenco
 
-Incrementos documentados pelo `README.md` da versão v7.4:
+O autor corrigiu a classificação em 30/09/2026: este pacote era a **Beta 2**,
+apesar de ter sido publicado anteriormente na pasta `beta-1`. A Beta 1
+verdadeira era o primeiro jogo desenhado com formas simples e não foi
+localizada no acervo.
 
-- Cartas e artes N1/N2 separadas por região, inclusive na consulta ao elenco.
-- **Sargento de Promoção**, capaz de transformar uma tropa N1 próxima em N2
-  após permanecer em campo; o N3 era temporário e ligado ao Núcleo de chefe.
-- Cenários em faixas físicas e contenções distintas para Cidade, Deserto e
-  Praia; pausa, remoção e interface superior de missão.
-- Liberação das três regiões para escolha no menu de campanha.
+Incrementos identificados no `README.md` original desta pasta:
 
-O pacote v7.4 acumula mudanças intermediárias v7.2 e v7.3; nem toda linha
-foi escrita de uma vez. Sua campanha ainda usa 15 ondas e não deve receber
-automaticamente as regras de 12 ondas da Beta 4.
+- Tela de carregamento que prepara cenários, personagens, objetos e efeitos
+  antes de liberar a partida.
+- Novo menu de abertura com **Jogar**, **Como jogar** e arquivos navegáveis de
+  **Soldados** e **Zumbis**.
+- Continuidade da campanha das três regiões, então com 15 ondas por região.
 
-Abra `executar.bat` nesta pasta para jogar. `python smoke_test.py` passou em
-30/09/2026. A revisão corretiva seguinte está em
-[`../../alphas/alfa-pos-beta-2/`](../../alphas/alfa-pos-beta-2/).
+Esta é uma cópia independente do marco preservado como
+`soldados-vs-zumbis-v6-menu`. Não foi atualizada com regras, arte ou controles
+da Beta 4. Para jogar, execute `executar.bat` nesta pasta. A checagem
+`python smoke_test.py` passou em 30/09/2026; campanha completa e aparência
+em outra máquina não foram verificadas.
+
+A revisão Alfa associada está em
+[`../../alphas/alfa-beta-2/`](../../alphas/alfa-beta-2/).

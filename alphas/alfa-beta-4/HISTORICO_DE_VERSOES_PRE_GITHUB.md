@@ -1,5 +1,10 @@
 # Inventário histórico antes da publicação
 
+> **Registro antigo, superado:** este inventário foi escrito antes de o autor
+> identificar as pastas em 30/09/2026. A classificação corrigida está no
+> [`README.md` principal](../../README.md). O texto abaixo permanece como
+> evidência do que se sabia na época, não como lista atual de versões.
+
 O histórico solicitado para o futuro repositório é:
 
 1. Alfa

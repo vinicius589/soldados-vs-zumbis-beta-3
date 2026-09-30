@@ -8,10 +8,11 @@ não são arquivos para misturar com uma Beta atual. Também contêm
 
 | Etapa | Pasta | Correção ou papel comprovado pelos arquivos |
 |---|---|---|
-| Alfa inicial | [`alfa-inicial/`](alfa-inicial/) | Primeira base preservada. Não há versão anterior disponível para afirmar quais bugs ela corrigiu. |
-| Alfa após Beta 1 | [`alfa-pos-beta-1/`](alfa-pos-beta-1/) | Arenas da Cidade e Praia reposicionadas sobre terreno jogável e correção da falha ao criar efeitos de projétil. |
-| Alfa após Beta 2 | [`alfa-pos-beta-2/`](alfa-pos-beta-2/) | Minas visuais e funcionais isoladas, restrição de colocação e redução da dificuldade excessiva. |
-| Alfa após Beta 3 | [`alfa-pos-beta-3/`](alfa-pos-beta-3/) | Snapshot de revisão anterior à entrega atual: testes, controles, arte e balanceamento em revisão. O nome original dizia “Beta 4” e já continha adições; por isso não é uma Alfa puramente corretiva demonstrável. |
+| Alfa inicial | [`alfa-inicial/`](alfa-inicial/) | Primeira etapa preservada com sprites, iniciada depois da Beta 1 de desenhos simples. |
+| Alfa da Beta 2 | [`alfa-beta-2/`](alfa-beta-2/) | Arenas da Cidade e Praia reposicionadas e correção da falha nos efeitos de projétil. |
+| Alfa da Beta 3 (v7.4) | [`alfa-beta-3-v7-4/`](alfa-beta-3-v7-4/) | Antiga “Beta 2” mal classificada: N1/N2, Sargento, contenções e interface, reconhecida pelo autor como Alfa corretiva da Beta 3. |
+| Alfa da Beta 3 (v7.5) | [`alfa-beta-3-v7-5/`](alfa-beta-3-v7-5/) | Minas isoladas, restrições de colocação e redução da dificuldade excessiva. |
+| Alfa da Beta 4 | [`alfa-beta-4/`](alfa-beta-4/) | Snapshot de revisão anterior à Beta 4: testes, controles, arte e balanceamento em revisão. Já continha adições; não é uma Alfa puramente corretiva. |
 
 As `NOTAS_DA_VERSAO.md` dentro de cada pasta separam evidência de
 interpretação. Os marcos de adição jogáveis ficam em [`../betas/`](../betas/).

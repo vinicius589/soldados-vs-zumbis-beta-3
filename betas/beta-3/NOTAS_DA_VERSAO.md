@@ -19,4 +19,4 @@ de classificação do marco, não a afirmação de que ele contém zero correç�
 
 Abra `executar.bat` nesta pasta. `python smoke_test.py` passou em 30/09/2026.
 A revisão preservada depois dele está em
-[`../../alphas/alfa-pos-beta-3/`](../../alphas/alfa-pos-beta-3/).
+[`../../alphas/alfa-beta-4/`](../../alphas/alfa-beta-4/).

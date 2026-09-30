@@ -20,22 +20,24 @@ copie o `main.py` de uma pasta para outra esperando que as artes coincidam.
 ## Onde está cada coisa?
 
 ```text
-alphas/           código e arte das quatro etapas de referência/correção
-betas/            Beta 1, 2, 3 e 4; cada uma abre por seu executar.bat
+alphas/           cinco etapas de criação de sprites e revisão
+betas/            Beta 1 documentada; Betas 2, 3 e 4 executáveis
 material-bruto/   textos originais, propostas e explicação do que eles são
 README.md         este guia
 ```
 
-Cada versão tem seu próprio `README.md`, `requirements.txt`, `main.py` e
-`executar.bat`. Também tem `NOTAS_DA_VERSAO.md`, que resume as mudanças
-encontradas nos arquivos **daquela** versão. As pastas são independentes:
+Cada versão **preservada** tem seu próprio `README.md`, `requirements.txt`,
+`main.py` e `executar.bat`. Também tem `NOTAS_DA_VERSAO.md`, que resume as
+mudanças encontradas nos arquivos **daquela** versão. A Beta 1 é a única
+exceção: seu código original não foi localizado e não há executável na
+pasta. As pastas jogáveis são independentes:
 uma Beta não busca imagens ou código dentro de outra Beta ou de uma Alfa.
 Arquivos grandes de arte e áudio usam Git LFS.
 
 ## Baixar o jogo com as imagens completas
 
 Use o arquivo **soldados-vs-zumbis-pacote-jogavel.zip** da
-[página de downloads do projeto](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/pacote-completo-2026-09-30).
+[página de downloads do projeto](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30).
 Extraia o ZIP e abra o `executar.bat` da Alfa ou Beta que quiser testar.
 As referências de produção ficam no download separado
 **soldados-vs-zumbis-material-bruto.zip**, na mesma página.
@@ -43,7 +45,7 @@ As referências de produção ficam no download separado
 **Não use “Code → Download ZIP” nem “Source code (zip)” para jogar.** Esses
 arquivos automáticos do GitHub contêm apenas referências de poucos bytes no
 lugar das imagens e dos sons guardados em Git LFS. Isso causa o erro
-`Unsupported image format` na Beta 4 e na Alfa após Beta 3 e faz as demais
+`Unsupported image format` na Beta 4 e na Alfa da Beta 4 e faz as demais
 versões mostrarem figuras provisórias (como círculos vermelhos). O pacote
 acima inclui os arquivos reais de todas as versões.
 
@@ -52,7 +54,8 @@ acima inclui os arquivos reais de todas as versões.
 1. Instale Python 3 e extraia o pacote completo indicado acima. Se preferir
    clonar o repositório como desenvolvedor, instale Git LFS e execute
    `git lfs pull` depois do clone para baixar a arte e o áudio completos.
-2. Abra `betas/beta-1/`, `beta-2/`, `beta-3/` ou `beta-4/`.
+2. Abra `betas/beta-2/`, `beta-3/` ou `beta-4/`. A Beta 1 original não está
+   disponível para execução porque seu arquivo não foi localizado.
 3. No Windows, dê dois cliques no **`executar.bat` dentro da pasta escolhida**.
    Não use um lançador de outra versão.
 
@@ -70,23 +73,25 @@ no menu do jogo. Para as regras e comandos próprios da versão atual, leia
 
 ## Por que há Alfas e Betas separadas?
 
-O critério pedido pelo autor é: **Beta** marca uma versão com conteúdo ou
-funções acrescentados; **Alfa** registra a base inicial ou uma etapa de
-correções. Isso organiza a consulta, mas não apaga as misturas reais dos
-pacotes antigos: algumas Betas também corrigiram bugs, e a revisão depois
-da Beta 3 já tinha parte do conteúdo da Beta 4. As notas apontam essas
-ressalvas em vez de inventar uma cronologia perfeita.
+Esta classificação foi corrigida conforme a identificação feita pelo autor
+em 30/09/2026. **Beta** é o marco de conteúdo aprovado; **Alfa** é a etapa de
+criação ou correção ligada à respectiva Beta. Os números internos `v6`, `v7.4`
+e `v7.5` identificam pacotes técnicos e não determinam o nome histórico da
+Beta. A primeira Beta tinha personagens e faixas desenhados com formas
+simples, sem sprites; seu arquivo original não está neste acervo. Não foi
+substituído por uma recriação apresentada como autêntica.
 
-| Ordem | Etapa | O que mudou e por que a pasta existe |
-|---:|---|---|
-| 1 | [Alfa inicial](alphas/alfa-inicial/) | Primeira base preservada: três regiões e campanha de 15 ondas. Serve para comparação. Não há versão anterior disponível que comprove correções específicas nela. |
-| 2 | [Beta 1](betas/beta-1/) | Acrescentou abertura, carregamento prévio de recursos e consulta de soldados e zumbis no menu. É jogável sem depender da Alfa. |
-| 3 | [Alfa após Beta 1](alphas/alfa-pos-beta-1/) | A reconstrução v7.1 reposicionou Cidade e Praia sobre terreno jogável e corrigiu um travamento ligado a efeitos de projéteis. A mudança de base foi maior que um patch pequeno. |
-| 4 | [Beta 2](betas/beta-2/) | Reuniu faixas e contenções por cenário, interface/pausa e evolução visual N1→N2 com Sargento de Promoção. Ainda usa campanha de 15 ondas. |
-| 5 | [Alfa após Beta 2](alphas/alfa-pos-beta-2/) | Separou as minas de objetos indevidos, restringiu minas de pressão ao terreno correto e reduziu a parede de dificuldade de chefes e resistentes. |
-| 6 | [Beta 3](betas/beta-3/) | Ampliou recursos regionais, armas de água/veneno/fogo e a escolha de Fácil, Médio ou Difícil; também consolidou correções de animação e cartas. |
-| 7 | [Alfa após Beta 3](alphas/alfa-pos-beta-3/) | Guarda o snapshot de revisão anterior ao fechamento atual. Embora aqui sirva como referência de correções, o arquivo original dizia “Beta 4” e já tinha adições; não é prova de uma fase só corretiva. |
-| 8 | [Beta 4](betas/beta-4/) | Versão atual com 12 ondas, quatro faixas, 24 cartas regionais (oito por mapa), áudio, controles e sistema de animações/counters integrado. É a pasta para a equipe continuar o trabalho. |
+| Etapa identificada | Arquivo preservado | Papel no acervo |
+|---|---|---|
+| [Beta 1](betas/beta-1/) | Original não localizado | Primeiro jogo de desenhos simples descrito pelo autor. A pasta contém apenas esta informação, sem código inventado. |
+| [Alfa inicial](alphas/alfa-inicial/) | Executável | Início do trabalho com sprites após a Beta 1. É a primeira base com arte preservada, não o primeiro jogo. |
+| [Beta 2](betas/beta-2/) | Executável | Antiga pasta chamada “Beta 1”: abertura, carregamento de recursos e consulta de personagens no menu. |
+| [Alfa da Beta 2](alphas/alfa-beta-2/) | Executável | Revisão v7.1 das arenas e da estabilidade dos efeitos. |
+| [Alfa da Beta 3 — v7.4](alphas/alfa-beta-3-v7-4/) | Executável | Antiga pasta chamada “Beta 2”: evolução N1/N2, Sargento, contenções e interface. Classificada pelo autor como Alfa de correção da Beta 3. |
+| [Alfa da Beta 3 — v7.5](alphas/alfa-beta-3-v7-5/) | Executável | Minas isoladas e redução de dificuldade excessiva. |
+| [Beta 3](betas/beta-3/) | Executável | Recursos regionais e modos de dificuldade. |
+| [Alfa da Beta 4](alphas/alfa-beta-4/) | Executável | Revisão de animações, controles, áudio e balanceamento antes da Beta 4. |
+| [Beta 4](betas/beta-4/) | Executável | Campanha de 12 ondas, quatro faixas, oito cartas por mapa, áudio e animações integradas. |
 
 Para detalhes de uma etapa, abra **`NOTAS_DA_VERSAO.md` na própria pasta**.
 As Alfas também mantêm código executável para comparação, mas não são a
@@ -105,7 +110,7 @@ de documento e as perguntas ainda abertas estão no README daquela pasta.
 
 Em 30/09/2026, `betas/beta-4/` passou em **122 testes automatizados** e na
 checagem de inicialização numa cópia limpa do repositório. As outras sete
-pastas também passaram em suas checagens básicas de inicialização. Isso
+pastas executáveis também passaram em suas checagens básicas de inicialização. Isso
 confirma que o pacote carrega; **não comprova** que todas as ondas são
 vencíveis nem que cada animação foi aprovada visualmente. Os pontos de
 revisão para a equipe estão em

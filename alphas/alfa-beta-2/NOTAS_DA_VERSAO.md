@@ -1,4 +1,4 @@
-# Alfa após Beta 1 — arenas e estabilidade
+# Alfa da Beta 2 — arenas e estabilidade
 
 Correções registradas no `README.md` original da reconstrução v7.1:
 
@@ -8,9 +8,9 @@ Correções registradas no `README.md` original da reconstrução v7.1:
   podia encerrar a partida.
 
 Esta pasta também representa uma reconstrução visual separada, não apenas um
-pequeno patch em cima dos arquivos da Beta 1. Por isso a comparação de
+pequeno patch em cima dos arquivos da Beta 2. Por isso a comparação de
 código deve considerar a mudança de base e não assumir que cada diferença é
 uma correção de bug.
 
-`python smoke_test.py` passou em 30/09/2026. O marco de adições seguinte
-está em [`../../betas/beta-2/`](../../betas/beta-2/).
+`python smoke_test.py` passou em 30/09/2026. A revisão preservada seguinte
+está em [`../alfa-beta-3-v7-4/`](../alfa-beta-3-v7-4/).
