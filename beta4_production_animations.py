@@ -879,6 +879,17 @@ def _roster_enemy_clips(
     # Cada quadro recebe a mesma altura corporal. O gesto muda, mas a criatura
     # não troca de escala entre caminhada, ataque, dano e habilidade.
     frames = _normalize_each_actor_height(cells, target_height)
+    if actor == "beach_puffer":
+        # A quarta pose de deslocamento da folha-fonte perdeu a cabeça no
+        # recorte. Retomar a primeira pose completa fecha o ciclo sem exibir
+        # meia criatura antes de voltar ao começo da passada.
+        frames[3] = frames[0].copy()
+    elif actor == "desert_boss_colossus":
+        # A segunda e a quarta poses contêm partes de outras células. Mesmo
+        # o recorte pelo maior componente deixava pixels intrusos; intercalar
+        # as duas poses inteiras preserva o corpo e evita o corte visível.
+        frames[1] = frames[0].copy()
+        frames[3] = frames[2].copy()
     if columns >= 16:
         # Todas as folhas HD seguem o mesmo contrato visual: quatro passos,
         # quatro quadros de contato, quatro de reação e quatro da habilidade.
