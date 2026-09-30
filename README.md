@@ -32,10 +32,24 @@ encontradas nos arquivos **daquela** versão. As pastas são independentes:
 uma Beta não busca imagens ou código dentro de outra Beta ou de uma Alfa.
 Arquivos grandes de arte e áudio usam Git LFS.
 
+## Baixar o jogo com as imagens completas
+
+Use o arquivo **soldados-vs-zumbis-pacote-completo.zip** da
+[página de downloads do projeto](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/pacote-completo-2026-09-30).
+Extraia o ZIP e abra o `executar.bat` da Alfa ou Beta que quiser testar.
+
+**Não use “Code → Download ZIP” nem “Source code (zip)” para jogar.** Esses
+arquivos automáticos do GitHub contêm apenas referências de poucos bytes no
+lugar das imagens e dos sons guardados em Git LFS. Isso causa o erro
+`Unsupported image format` na Beta 4 e na Alfa após Beta 3 e faz as demais
+versões mostrarem figuras provisórias (como círculos vermelhos). O pacote
+acima inclui os arquivos reais de todas as versões.
+
 ## Como abrir uma Beta
 
-1. Instale Python 3 e Git LFS. Depois de clonar o repositório, execute
-   `git lfs pull` para baixar a arte e o áudio completos.
+1. Instale Python 3 e extraia o pacote completo indicado acima. Se preferir
+   clonar o repositório como desenvolvedor, instale Git LFS e execute
+   `git lfs pull` depois do clone para baixar a arte e o áudio completos.
 2. Abra `betas/beta-1/`, `beta-2/`, `beta-3/` ou `beta-4/`.
 3. No Windows, dê dois cliques no **`executar.bat` dentro da pasta escolhida**.
    Não use um lançador de outra versão.
