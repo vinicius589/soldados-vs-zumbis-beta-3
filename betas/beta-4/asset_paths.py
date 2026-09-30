@@ -10,6 +10,8 @@ def game_root() -> Path:
         return source
 
     executable = Path(sys.executable).resolve()
+    if (executable.parent / "assets" / "v7").is_dir():
+        return executable.parent
     for parent in executable.parents:
         candidate = parent / "betas" / "beta-4"
         if (candidate / "assets" / "v7").is_dir():
