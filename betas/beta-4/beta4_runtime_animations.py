@@ -15,7 +15,9 @@ import pygame
 from animation2d import AnimationClip, AnimationManager, SpriteSheet
 
 
-ROOT = Path(__file__).resolve().parent
+from asset_paths import game_root
+
+ROOT = game_root()
 ASSETS = ROOT / "PROTOTIPO_CARTA_CAMPO" / "assets"
 
 

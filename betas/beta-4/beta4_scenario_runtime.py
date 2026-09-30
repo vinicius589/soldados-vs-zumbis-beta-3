@@ -13,7 +13,9 @@ import pygame
 from animation2d import SpriteSheet
 
 
-ROOT = Path(__file__).resolve().parent
+from asset_paths import game_root
+
+ROOT = game_root()
 SCENARIO_ROOT = ROOT / "CENARIOS_BETA4_CONCEITOS"
 AMBIENT = SCENARIO_ROOT / "animacao_ambiental"
 PIXEL = ROOT / "PIXEL_ART_SPRITES_BETA4" / "frames_sem_chroma"

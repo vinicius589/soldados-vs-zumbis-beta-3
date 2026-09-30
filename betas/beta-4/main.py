@@ -20,6 +20,7 @@ from typing import Callable
 
 import pygame
 
+from asset_paths import game_root
 from animation2d import AnimationManager
 from beta4_expansion_roster import EXPANSION_DEFENDERS
 from beta4_production_animations import build_production_clips, new_production_animation
@@ -35,11 +36,20 @@ from visual_layout import (
 )
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = game_root()
 ASSET_DIR = ROOT / "assets" / "v7"
 PRODUCTION_ASSET_DIR = ROOT / "assets" / "beta4_producao"
 AUDIO_DIR = ROOT / "assets" / "audio_beta4"
-SAVE_PATH = ROOT / "campanha_v7.json"
+if getattr(sys, "frozen", False):
+    if os.name == "nt":
+        user_data = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SoldadosVsZumbis"
+    elif sys.platform == "darwin":
+        user_data = Path.home() / "Library" / "Application Support" / "SoldadosVsZumbis"
+    else:
+        user_data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "SoldadosVsZumbis"
+    SAVE_PATH = user_data / "campanha_v7.json"
+else:
+    SAVE_PATH = ROOT / "campanha_v7.json"
 WIDTH, HEIGHT = 1280, 720
 FPS = 60
 VERSION = "BETA 4"
@@ -2218,6 +2228,7 @@ def load_save() -> dict:
 
 def save_campaign(data: dict) -> None:
     try:
+        SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
         SAVE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:
         pass
@@ -7806,4 +7817,19 @@ class Game:
 
 
 if __name__ == "__main__":
-    Game(integration_preview="--integracao-beta4" in sys.argv[1:]).run()
+    if "--verificar-pacote" in sys.argv[1:]:
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+        os.environ.setdefault("SVZ_RENDERER", "software")
+        game = Game()
+        for _ in range(game.assets.total + 8):
+            game.update(1 / FPS)
+            game.draw()
+            if game.scene == "title":
+                break
+        if game.scene != "title" or not game.assets.complete:
+            raise RuntimeError("O pacote nao conseguiu carregar as artes e o menu inicial")
+        pygame.quit()
+        print("PACOTE_OK")
+    else:
+        Game(integration_preview="--integracao-beta4" in sys.argv[1:]).run()

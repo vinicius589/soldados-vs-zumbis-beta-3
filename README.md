@@ -1,16 +1,20 @@
-# Soldados vs Zumbis — versões do jogo
+# Projeto Soldados vs Zumbis — jogar e consultar as versões
 
-## Baixar e jogar a Beta 4
+## Jogar agora — Windows 10/11
 
-**[BAIXAR SÓ A BETA 4 PARA JOGAR (ZIP)](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-beta-4-jogar.zip)** — arquivo publicado na [página de versões e downloads](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30), visível para qualquer pessoa. Para consultar todas as Alfas e Betas, há também o [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-pacote-jogavel.zip). Extraia o ZIP inteiro antes de abrir o jogo. Não baixe pelo botão verde **Code → Download ZIP**: esse ZIP automático não contém todas as imagens e sons.
+1. Clique no botão verde **Code → Download ZIP** nesta página.
+2. Extraia **o ZIP inteiro** pelo Windows, 7-Zip ou WinRAR. Não abra o jogo de dentro do ZIP.
+3. Na pasta extraída, dê dois cliques em **`JOGAR_AGORA_WINDOWS.exe`**. Não é necessário instalar Python ou bibliotecas, nem baixar as artes na primeira abertura.
 
-| Sistema | Como abrir depois de extrair |
-|---|---|
-| Windows 10/11 | Instale Python 3.12 ou mais recente; dê dois cliques em `JOGAR_BETA_4.bat`. |
-| macOS | Instale Python 3.12 ou mais recente; abra `jogar-beta-4-macos.command`. Se o macOS não permitir abrir pelo Finder, use `bash jogar-beta-4-macos.command` no Terminal, dentro da pasta extraída. |
-| Linux | Instale Python 3.12 ou mais recente; no terminal da pasta extraída, execute `bash jogar-beta-4.sh`. Algumas distribuições também exigem o pacote `python3-venv`. |
+O executável é da **Beta 4** e procura as imagens e os sons em `betas/beta-4/` dentro da mesma pasta extraída. Não mova apenas o `.exe` para a área de trabalho. O jogo salva o progresso na pasta de dados local do usuário, não dentro do ZIP. O executável não é assinado digitalmente; o Windows pode mostrar um aviso de segurança. Confira que o arquivo veio deste repositório antes de permitir a abertura. A inicialização e o carregamento de recursos foram testados no Windows 11; Windows 10 ainda precisa de confirmação em outro computador.
 
-Os lançadores preparam as bibliotecas automaticamente na primeira abertura, com acesso à internet. O Windows foi testado. A sintaxe dos iniciadores Linux/macOS foi conferida, mas a abertura gráfica nesses sistemas ainda precisa ser confirmada em computadores reais. Não há executável independente de Python para os três sistemas.
+O GitHub está configurado para **incluir os arquivos Git LFS no Download ZIP**, por isso esse download será grande. O uso desses arquivos consome a franquia de tráfego Git LFS do proprietário do repositório; em caso de limite atingido, use o [pacote da Beta 4 nos Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-beta-4-jogar.zip) como alternativa, observando que esse pacote histórico exige Python.
+
+### macOS e Linux
+
+O código está disponível nas mesmas pastas, mas **não há executável nativo pronto** para esses sistemas. Instale Python 3.12 ou mais recente, extraia o ZIP completo e use `bash jogar-beta-4-macos.command` no Terminal do macOS ou `bash jogar-beta-4.sh` no terminal Linux, a partir da raiz do projeto. Esses iniciadores instalam as bibliotecas na primeira execução; pode ser necessário instalar `python3-venv` no Linux. O código é multiplataforma, mas a execução gráfica ainda precisa ser testada nesses sistemas.
+
+Para comparar as versões antigas e consultar as Alfas, use as pastas `alphas/` e `betas/` ou a [página de versões e downloads](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30).
 
 Este repositório guarda o jogo **e a evolução dele**, sem espalhar código,
 sprites, prompts e relatórios pela página inicial. Se você só quer jogar,
@@ -46,23 +50,18 @@ pasta. As pastas jogáveis são independentes:
 uma Beta não busca imagens ou código dentro de outra Beta ou de uma Alfa.
 Arquivos grandes de arte e áudio usam Git LFS.
 
-## Baixar o jogo com as imagens completas
+## Arquivos e versões anteriores
 
-Use o **pacote histórico completo vinculado no começo desta página**. Para jogar uma versão
-antiga, extraia o pacote e abra o `executar.bat` da Alfa ou Beta desejada no Windows.
-As referências de produção ficam no download separado
-**soldados-vs-zumbis-material-bruto.zip**, na mesma página.
-
-**Não use “Code → Download ZIP” nem “Source code (zip)” para jogar.** Esses
-arquivos automáticos do GitHub contêm apenas referências de poucos bytes no
-lugar das imagens e dos sons guardados em Git LFS. Isso causa o erro
-`Unsupported image format` na Beta 4 e na Alfa da Beta 4 e faz as demais
-versões mostrarem figuras provisórias (como círculos vermelhos). O pacote
-acima inclui os arquivos reais de todas as versões.
+O **Code → Download ZIP** agora deve incluir as artes reais de todas as pastas,
+pois a opção de inclusão de Git LFS foi ativada no repositório. Para consultar
+versões antigas, abra o `executar.bat` na pasta da versão desejada, após
+instalar Python. O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-pacote-jogavel.zip)
+e os textos brutos continuam disponíveis nos Releases. A Beta 1 original não
+foi localizada; sua pasta é apenas documental.
 
 ## Como abrir uma Beta
 
-1. Instale Python 3.12 ou mais recente e extraia o pacote completo indicado acima. Se preferir
+1. Instale Python 3.12 ou mais recente e extraia o ZIP completo. Se preferir
    clonar o repositório como desenvolvedor, instale Git LFS e execute
    `git lfs pull` depois do clone para baixar a arte e o áudio completos.
 2. Abra `betas/beta-2/`, `beta-3/` ou `beta-4/`. A Beta 1 original não está
