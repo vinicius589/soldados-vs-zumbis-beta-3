@@ -1,6 +1,10 @@
 # Soldados vs Zumbis — Beta 4
 
-Esta é a pasta executável e independente da Beta 4. No Windows, abra
+Esta é a pasta executável e independente da Beta 4. Depois de extrair o
+[pacote da Beta 4](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/download/historico-corrigido-2026-09-30/soldados-vs-zumbis-beta-4-jogar.zip),
+use o lançador da raiz: `JOGAR_BETA_4.bat` no Windows,
+`jogar-beta-4-macos.command` no macOS ou `bash jogar-beta-4.sh` no Linux.
+É necessário Python 3.12 ou mais recente. No Windows também funciona abrir
 `executar.bat` **aqui**. Para comparar versões, volte aos índices
 [`../README.md`](../README.md) e [`../../alphas/README.md`](../../alphas/README.md).
 O resumo deste marco está em [`NOTAS_DA_VERSAO.md`](NOTAS_DA_VERSAO.md).
