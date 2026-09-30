@@ -1,6 +1,6 @@
 # Beta 4 — passagem de trabalho para a equipe
 
-Esta entrega reúne o jogo executável, o histórico de versões, artes de
+Esta entrega reúne o jogo executável em `betas/beta-4/`, o histórico de versões, artes de
 produção, ferramentas, referências e testes. O autor pediu que os colegas
 finalizem o projeto a partir dela. Os pontos abaixo continuam abertos e não
 devem ser apresentados como aprovados apenas porque os testes passam.
@@ -45,7 +45,8 @@ renderizador do jogo.
 4. Revalidar a disponibilidade automática das oito cartas regionais ao
    entrar no mapa, sem tela de seleção pré-partida. A documentação de
    propostas antigas ainda menciona cartas descartadas ou números de
-   suprimentos anteriores; `main.py` e `README.md` descrevem a produção vigente.
+   suprimentos anteriores; `betas/beta-4/main.py` e seu `README.md` descrevem
+   a produção vigente.
 
 ## Perguntas a decidir com o autor
 
@@ -64,14 +65,15 @@ renderizador do jogo.
 
 1. Instale Python 3 e as dependências de `requirements.txt`.
 2. Clone o repositório e execute `git lfs pull` para obter as artes e o áudio.
-3. Rode `python -m unittest discover -s . -p "test_*.py"` e
-   `python smoke_test.py` antes de alterar a lógica.
-4. Abra `executar.bat` e faça a revisão visual em uma janela real. O modo
+3. Entre em `betas/beta-4/` e rode `python -m unittest discover -s . -p "test_*.py"`
+   e `python smoke_test.py` antes de alterar a lógica.
+4. Abra `betas/beta-4/executar.bat` e faça a revisão visual em uma janela real. O modo
    padrão utiliza CPU/RAM; PyOpenGL é apenas uma opção.
 5. Descreva no PR a região, a carta ou ameaça, o estado de animação, o quadro
    e um antes/depois capturado dentro do jogo. Não substitua os assets
    aprovados de suprimento sem necessidade.
 
-Os históricos em `historico/` são registros. A implementação em andamento
-fica na raiz do repositório. Áudios derivados de fontes CC0 e seus links
-estão descritos em `assets/audio_sources_cc0/SOURCES.md`.
+As Alfas em `alphas/` são registros; as Betas antigas em `betas/` continuam
+executáveis e também devem permanecer congeladas. A implementação em
+andamento fica em `betas/beta-4/`. Áudios derivados de fontes CC0 e seus links
+estão descritos em `betas/beta-4/assets/audio_sources_cc0/SOURCES.md`.

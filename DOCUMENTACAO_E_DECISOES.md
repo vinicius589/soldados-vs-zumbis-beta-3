@@ -1,16 +1,17 @@
 # Guia das informações entregues à equipe
 
 Esta página distingue **o que está implementado** de propostas, protótipos e
-revisões históricas. A autoridade para o comportamento da Beta 4 é o código da
-raiz, conferido pelos testes, e o [`README.md`](README.md). Se outro documento
+revisões históricas. A autoridade para o comportamento da Beta 4 é o código de
+[`betas/beta-4/`](betas/beta-4/), conferido pelos testes, e seu
+[`README.md`](betas/beta-4/README.md). A raiz mantém um espelho de
+compatibilidade. Se outro documento
 contradiz esses dois, ele registra uma etapa anterior ou uma ideia ainda não
 aprovada; não deve ser tratado como ordem de implementação.
 
 ## Versões e critérios
 
-- [`historico/README.md`](historico/README.md): sequência de Alfa inicial,
-  Beta 1, Alfa pós-Beta 1, Beta 2, Alfa pós-Beta 2, Beta 3, Alfa pós-Beta 3
-  e Beta 4, com a origem exata de cada pasta.
+- [`alphas/README.md`](alphas/README.md) e [`betas/README.md`](betas/README.md):
+  sequência dos marcos, localização do código e execução de cada Beta.
 - [`HISTORICO_DE_VERSOES_PRE_GITHUB.md`](HISTORICO_DE_VERSOES_PRE_GITHUB.md):
   levantamento realizado antes da publicação. Chamar uma versão de **Beta**
   significa que o marco acrescentou conteúdo; chamar de **Alfa** significa
@@ -34,6 +35,8 @@ aprovada; não deve ser tratado como ordem de implementação.
 - [`PENDENCIAS_PARA_EQUIPE.md`](PENDENCIAS_PARA_EQUIPE.md): questões em aberto,
   risco visual, balanceamento não validado por jogadas completas e protocolo
   de contribuição.
+- [`PROXIMAS_DECISOES.md`](PROXIMAS_DECISOES.md): escolhas futuras propostas,
+  explicitamente ainda não aprovadas.
 
 ## Ideias e decisões anteriores
 

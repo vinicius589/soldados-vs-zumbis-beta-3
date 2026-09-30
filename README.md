@@ -1,5 +1,17 @@
 # Soldados vs Zumbis — Beta 4
 
+**Para começar:** as versões jogáveis estão em [`betas/`](betas/); abra a
+versão desejada e execute o `executar.bat` dentro dela. A referência de
+código e correções das Alfas está em [`alphas/`](alphas/). Cada pasta traz
+`NOTAS_DA_VERSAO.md` com as mudanças identificadas nos arquivos. As
+[possíveis próximas decisões](PROXIMAS_DECISOES.md) são propostas, não regras
+aprovadas.
+
+Esta raiz conserva a Beta 4 anterior como espelho de compatibilidade dos
+caminhos locais. Para trabalhar daqui em diante, a equipe deve usar a cópia
+independente em [`betas/beta-4/`](betas/beta-4/). O restante deste README
+descreve a jogabilidade da Beta 4.
+
 Protótipo 2D de Tower Defense feito com Pygame e apresentação opcional por PyOpenGL. Esta reconstrução integra os três cenários aprovados, quatro faixas por mapa, animações quadro a quadro controladas por `dt` e elencos regionais completos para a campanha de 12 ondas.
 
 ## Executar
@@ -136,11 +148,11 @@ das páginas da história e o GIF `tenente_cidade_apito.gif` em
 
 ## Entrega para a equipe
 
-A raiz deste repositório contém a Beta 4 jogável. As sete etapas anteriores,
-na ordem Alfa → Beta 1 → Alfa → Beta 2 → Alfa → Beta 3 → Alfa, estão em
-[`historico/README.md`](historico/README.md). As Betas identificam marcos com
-adições; as Alfas documentam rodadas de correção. Os snapshots são cópias dos
-arquivos preservados, sem substituir a produção atual.
+A Beta 4 jogável para a equipe está em [`betas/beta-4/`](betas/beta-4/).
+As versões anteriores, na ordem Alfa → Beta 1 → Alfa → Beta 2 → Alfa →
+Beta 3 → Alfa, estão separadas entre [`alphas/`](alphas/) e
+[`betas/`](betas/). As Betas identificam marcos de adição; as Alfas são
+referências dos ciclos de correção, com ressalvas históricas nas notas.
 
 As decisões ainda abertas e os pontos que precisam de aprovação visual estão
 em [`PENDENCIAS_PARA_EQUIPE.md`](PENDENCIAS_PARA_EQUIPE.md). A origem do áudio

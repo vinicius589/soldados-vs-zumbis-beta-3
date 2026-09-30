@@ -1,8 +1,8 @@
 # Inventário histórico antes da publicação
 
-> Este inventário foi escrito antes da entrega. A localização atual das
-> cópias preservadas está em `historico/README.md`; a Beta 4 atual está na
-> raiz do repositório.
+> Este inventário foi escrito antes da entrega e registra os nomes originais.
+> A localização atual das cópias está em `alphas/README.md` e
+> `betas/README.md`; a Beta 4 executável da equipe está em `betas/beta-4/`.
 
 Este inventário usa a regra definida pelo autor do jogo:
 
