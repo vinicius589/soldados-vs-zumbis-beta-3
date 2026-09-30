@@ -236,6 +236,11 @@ def lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
 
+RUNNER_HIT_SECONDS = 0.42
+ZOMBIE_HIT_SECONDS = 0.52
+SOLDIER_HIT_SECONDS = 0.45
+
+
 @dataclass
 class ActorMotion:
     """Estado visual temporizado de uma unidade em campo.
@@ -252,10 +257,12 @@ class ActorMotion:
     state_elapsed: float = 0.0
     event_left: float = 0.28
     hit_flash: float = 0.0
+    hit_recovery_left: float = 0.0
 
     def advance(self, dt: float, fallback: str) -> None:
         self.state_elapsed += dt
         self.hit_flash = max(0.0, self.hit_flash - dt)
+        self.hit_recovery_left = max(0.0, self.hit_recovery_left - dt)
         if self.event_left > 0:
             self.event_left = max(0.0, self.event_left - dt)
             if self.event_left > 0:
@@ -282,6 +289,20 @@ class ActorMotion:
             self.state = state
             self.state_elapsed = 0.0
         self.event_left = 0.0
+
+    def react_to_hit(self, duration: float, recovery: float) -> bool:
+        """Exibe um impacto por ciclo, sem travar no último quadro sob rajadas.
+
+        Novos danos ainda reduzem HP e piscam, mas não prolongam a mesma pose
+        sem fim. O intervalo reserva uma passagem visível pela locomoção antes
+        de outra reação corporal.
+        """
+        if self.hit_recovery_left > 0:
+            return False
+        duration = max(0.01, float(duration))
+        self.trigger("hit", duration)
+        self.hit_recovery_left = duration + max(0.0, float(recovery))
+        return True
 
     def flash(self, seconds: float = 0.13) -> None:
         self.hit_flash = max(self.hit_flash, seconds)
@@ -3671,18 +3692,18 @@ class Battle:
             self.app.audio.play("zombie_hit", min_interval_ms=70)
         if effect not in {"status_tick", "acid"}:
             enemy.motion.flash()
-            # Todo infectado acusa o impacto e interrompe brevemente o avanço.
-            # Corredores são a exceção declarada: ainda piscam/animam o golpe,
-            # mas sua corrida lógica nunca é paralisada pelo stagger.
-            if "unstaggerable" not in enemy.tags:
-                enemy.stun = max(enemy.stun, float(enemy.data.get("damage_stagger", 0.14)))
+            # Uma rajada não pode manter a animação não repetitiva no último
+            # quadro. Cada reação termina e reserva um intervalo de corrida.
+            # O Corredor reage visualmente, mas nunca perde velocidade por
+            # stagger; os demais pausam somente em impactos registrados.
             if not enemy.jump_state and not enemy.dig_state:
-                hit_duration = (
-                    enemy.visual_animation.animations["hit"].duration
-                    if enemy.visual_animation is not None
-                    else 0.12
+                runner = "runner" in enemy.tags
+                reacted = enemy.motion.react_to_hit(
+                    RUNNER_HIT_SECONDS if runner else ZOMBIE_HIT_SECONDS,
+                    recovery=0.42 if runner else 0.26,
                 )
-                enemy.motion.trigger("hit", hit_duration)
+                if reacted and "unstaggerable" not in enemy.tags:
+                    enemy.stun = max(enemy.stun, float(enemy.data.get("damage_stagger", 0.14)))
         if effect == "flame":
             was_burning = enemy.burn > 0
             enemy.burn = max(enemy.burn, 3.3)
@@ -3714,12 +3735,7 @@ class Battle:
         defender.hp -= amount
         self.app.audio.play("soldier_hit", min_interval_ms=95)
         defender.motion.flash()
-        hit_duration = (
-            defender.visual_animation.animations["hit"].duration
-            if defender.visual_animation is not None
-            else 0.12
-        )
-        defender.motion.trigger("hit", hit_duration)
+        defender.motion.react_to_hit(SOLDIER_HIT_SECONDS, recovery=0.22)
         if effect == "stun":
             defender.stun = max(defender.stun, 2.2)
         elif effect == "acid":
@@ -4144,8 +4160,13 @@ class Battle:
                 state, rate = "reload", clip.duration / reload_seconds
             elif defender.motion.state == "support" and "support" in animation.animations:
                 state, rate = "support", 1.0
-            elif defender.motion.state in {"hit", "stunned"}:
-                state, rate = "hit", 1.0
+            elif defender.motion.state == "hit":
+                state = "hit"
+                rate = animation.animations["hit"].duration / SOLDIER_HIT_SECONDS
+            elif defender.motion.state == "stunned":
+                # Atordoamento longo não pode segurar o último quadro do
+                # clipe de dano, que é uma ação única.
+                state, rate = "idle", 1.0
             else:
                 state, rate = "idle", 1.0
             self._play_visual_state(animation, state, playback_rate=rate)
@@ -4165,9 +4186,17 @@ class Battle:
                 and "skill" in animation.animations
             ):
                 state = "skill"
-            elif enemy.motion.state in {"hit", "stunned"}:
+            elif enemy.motion.state == "hit":
                 state = "hit"
-            elif enemy.motion.state in {"walk", "spawn"}:
+                window = RUNNER_HIT_SECONDS if "runner" in enemy.tags else ZOMBIE_HIT_SECONDS
+                rate = animation.animations["hit"].duration / window
+            elif enemy.motion.state == "stunned":
+                state = "idle"
+            elif enemy.motion.state in {"walk", "spawn"} or (
+                "runner" in enemy.tags
+                and enemy.stun <= 0
+                and self.blocker_for(enemy) is None
+            ):
                 state = "move"
                 # Cada ciclo cobre um comprimento de passada coerente com a
                 # silhueta. Corredores alternam os pés mais depressa;
@@ -4761,7 +4790,8 @@ class Battle:
             if self.update_enemy_motion(enemy, dt):
                 continue
             if enemy.stun > 0:
-                enemy.motion.trigger("stunned", enemy.stun)
+                if enemy.motion.state != "hit":
+                    enemy.motion.trigger("stunned", enemy.stun)
                 continue
             speed = float(enemy.data["speed"]) * (1.55 if enemy.rage > 0 else 1.0)
             if (

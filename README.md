@@ -6,7 +6,7 @@ Este repositório abre diretamente na versão jogável atual. É um jogo de defe
 
 1. No botão verde **Code**, escolha **Download ZIP**.
 2. Aguarde o download completo e **extraia o ZIP inteiro** pelo Explorador do Windows, 7-Zip ou WinRAR. O pacote é grande porque já contém as imagens e os sons; não há outro download de recursos.
-3. Abra a pasta extraída e dê dois cliques em **`JOGAR_AGORA_WINDOWS.exe`**, que está nesta mesma pasta do README. Não precisa instalar Python.
+3. Abra a pasta extraída e dê dois cliques em **`JOGAR AGORA.exe`**, que está ao lado deste README. Não precisa instalar Python nem procurar outra pasta do jogo.
 
 Não execute o jogo de dentro do ZIP e não mova o `.exe` sozinho: as pastas de arte e áudio precisam ficar ao lado dele. O executável não é assinado digitalmente; se o Windows pedir confirmação, confira que o arquivo veio deste repositório. Ele foi testado no Windows 11; o Windows 10 ainda precisa de teste em outra máquina.
 
@@ -29,6 +29,6 @@ O botão **Code → Download ZIP** entrega **somente a Beta 4 atual**, pronta pa
 
 ## Versões anteriores e colaboração
 
-As versões de referência, Alfas de correção, Betas anteriores e textos de desenvolvimento estão nos [Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases), separados do download principal. O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-3/releases/tag/historico-corrigido-2026-09-30) é para consulta e pode exigir Python. A Beta 1 original, feita com desenhos simples, não foi localizada; não apresentamos uma recriação como se fosse o arquivo autêntico.
+As versões de referência, Alfas de correção, Betas anteriores e textos de desenvolvimento estão nos [Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases), separados do download principal. O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases/tag/historico-corrigido-2026-09-30) é para consulta e pode exigir Python. A Beta 1 original, feita com desenhos simples, não foi localizada; não apresentamos uma recriação como se fosse o arquivo autêntico.
 
 A Beta 4 é a base para a equipe continuar o projeto. As Alfas registram correções entre marcos de conteúdo, enquanto as Betas marcam as versões ampliadas. Ainda há espaço para refinar arte, som e balanceamento com testes dos colegas e do professor; apontem o mapa, a onda, a unidade e, se possível, uma captura quando acharem um defeito.
