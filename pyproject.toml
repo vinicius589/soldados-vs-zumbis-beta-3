@@ -1,6 +1,6 @@
 [project]
 name = "soldados-vs-zumbis"
-version = "4.0.1"
+version = "4.0.2"
 description = "Tower defense 2D original em Pygame — projeto acadêmico de programação."
 readme = "README.md"
 license = { text = "MIT" }

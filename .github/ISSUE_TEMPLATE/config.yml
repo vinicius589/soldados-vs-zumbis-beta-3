@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pesquisar Issues existentes
+    url: https://github.com/vinicius589/soldados-vs-zumbis-beta-4/issues
+    about: Procure problemas já reportados antes de abrir uma nova Issue.
+  - name: Releases e versões
+    url: https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases
+    about: Baixe versões estáveis e veja as notas de cada release.

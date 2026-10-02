@@ -1,108 +1,49 @@
-# Contribuindo com Soldados vs Zumbis
+# Como contribuir
 
-Obrigado por querer contribuir! Este documento descreve o fluxo de trabalho
-para manter o projeto organizado e facilitar a revisão entre colegas.
+Obrigado por contribuir com Soldados vs Zumbis. Este projeto prioriza mudanças
+pequenas, testes reproduzíveis e histórico de Git fácil de revisar.
 
-## Configuração do Ambiente
+## Ambiente
 
 ```bash
-# 1. Clone o repositório
 git clone https://github.com/vinicius589/soldados-vs-zumbis-beta-4.git
 cd soldados-vs-zumbis-beta-4
-
-# 2. Crie um ambiente virtual
 python -m venv .venv
-
-# 3. Ative o ambiente virtual
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# 4. Instale as dependências
-pip install -r requirements.txt
-
-# 5. Execute o jogo
-python run.py
+# ative o ambiente conforme seu sistema
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 ```
 
-## Fluxo de Branches
+## Antes de programar
 
-Seguimos um **Git Flow simplificado**:
+1. Procure uma Issue existente ou abra uma nova.
+2. Defina o comportamento esperado e os critérios de aceite.
+3. Parta de `develop`, nunca de uma branch de trabalho antiga.
+4. Leia [`docs/REPOSITORY_GUIDE.md`](REPOSITORY_GUIDE.md) ao adicionar assets,
+   ferramentas ou documentação.
 
-| Branch | Propósito |
-|--------|-----------|
-| `main` | Versão estável (releases) |
-| `develop` | Integração contínua |
-| `feat/<nome>` | Nova funcionalidade |
-| `fix/<nome>` | Correção de bug |
-| `art/<nome>` | Mudanças em assets (arte, som) |
-| `docs/<nome>` | Apenas documentação |
-
-### Criando uma branch
+## Qualidade obrigatória
 
 ```bash
-# Sempre parta de develop
-git checkout develop
-git pull origin develop
-git checkout -b feat/minha-funcionalidade
+python -m pytest
+python -m ruff check src tests
+python -m compileall -q src run.py
+git diff --check
 ```
 
-### Abrindo um Pull Request
+Mudança de lógica precisa de teste. Mudança visual precisa de verificação em
+1280×720 e, quando possível, uma captura antes/depois no PR.
 
-1. Faça push da sua branch: `git push origin feat/minha-funcionalidade`
-2. Abra um PR em GitHub apontando para `develop`
-3. Preencha o template do PR
-4. Aguarde revisão de pelo menos um colega
+## Código e assets
 
-## Convenção de Commits
+- Python 3.12+, type hints e docstrings em português.
+- Durações de animação em segundos.
+- Caminhos de assets por `game_root()`.
+- Arte e áudio de terceiros com crédito.
+- Sem segredos, saves, caches ou arquivos temporários no Git.
 
-Usamos **Conventional Commits** — veja [`docs/COMMIT_CONVENTION.md`](COMMIT_CONVENTION.md)
-para a referência completa.
+## Pull Request
 
-**Formato:** `<tipo>(escopo): descrição curta`
-
-```
-feat(campanha): adicionar onda 13 com mini-boss regional
-fix(animacao): corrigir sprite do rastejador cortado na borda
-art(deserto): nova folha do incinerador v2
-docs(readme): atualizar instruções de instalação
-```
-
-## Reportando Bugs
-
-Ao encontrar um defeito:
-
-1. Abra uma Issue usando o template **Bug Report**
-2. Informe: **mapa**, **onda**, **unidade** envolvida
-3. Se possível, anexe uma captura de tela ou gravação
-4. Descreva o comportamento esperado vs. o observado
-
-## Padrões de Código
-
-- **Python 3.12+** com type hints
-- Docstrings em português para manter consistência com o projeto
-- Nomes de variáveis em inglês para código, português para textos do jogador
-- Tempos de animação sempre em **segundos** (nunca contagem de frames)
-- `asset_paths.game_root()` para qualquer caminho de recurso
-
-## Estrutura de Diretórios
-
-```
-src/engine/   → código reutilizável (animação, render, paths)
-src/game/     → lógica específica do jogo
-assets/       → recursos visuais e sonoros
-tools/        → scripts de pipeline de produção
-tests/        → testes automatizados
-docs/         → documentação do projeto
-```
-
-## Testes
-
-```bash
-# Rodar testes (quando disponíveis)
-python -m pytest tests/
-```
-
-Cobertura de testes é encorajada para lógica de jogo (dano, recarregamento,
-seleção de alvo). Módulos visuais são testados manualmente.
+O PR deve explicar o problema, a solução, como testar e o impacto no jogo.
+Marque a categoria correta, atualize o changelog quando aplicável e aguarde os
+checks `ruff`, `pytest` e `package-smoke`.

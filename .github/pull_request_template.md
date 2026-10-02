@@ -1,82 +1,52 @@
-<!--
-  Pull Request — Soldados vs Zumbis
-  Preencha todas as seções. PRs incompletos voltam para revisão.
-  Convenção: docs/COMMIT_CONVENTION.md  ·  Fluxo: docs/BRANCHING.md
--->
+<!-- Leia docs/CONTRIBUTING.md e docs/BRANCHING.md antes de abrir o PR. -->
 
-## 🎯 Descrição
+## Objetivo
 
-<!-- O que este PR faz e por quê. Uma ou duas frases. -->
+<!-- Qual problema este PR resolve? -->
 
-## 🔗 Issue relacionada
+## Tipo de mudança
 
-<!-- Ex.: Closes #42 — fecha a Issue ao mesclar. Use "Refs #" se não fechar. -->
+- [ ] `feat` — funcionalidade
+- [ ] `fix` — correção
+- [ ] `art` — arte ou áudio
+- [ ] `refactor` — reestruturação
+- [ ] `test` — testes
+- [ ] `docs` — documentação
+- [ ] `chore` — build, dependências ou configuração
 
-- **Issue:** #
+## Escopo afetado
 
-## 🏷️ Tipo de mudança
-
-- [ ] `feat` — Nova funcionalidade para o jogador
-- [ ] `fix` — Correção de bug
-- [ ] `art` — Mudança em assets (arte, som)
-- [ ] `refactor` — Refatoração sem mudar comportamento externo
-- [ ] `test` — Criação ou correção de testes
-- [ ] `docs` — Apenas documentação
-- [ ] `perf` — Ganho de desempenho
-- [ ] `chore` — Configuração, dependências, CI
-
-## 🗺️ Região / Sistema afetado
-
-- [ ] Cidade (Nova York)
-- [ ] Deserto (Egito)
-- [ ] Praia (Cachoeira-MG)
-- [ ] Sistema de cartas
-- [ ] Campanha / Ondas
-- [ ] Engine (animação, render)
+- [ ] Cidade
+- [ ] Deserto
+- [ ] Cachoeira de Minas Gerais
+- [ ] Campanha / ondas
+- [ ] Cartas / unidades
+- [ ] Engine / renderização
 - [ ] Áudio
-- [ ] Interface do jogador
-- [ ] Outro: ___
+- [ ] Ferramentas / assets
+- [ ] Documentação
 
-## ⚠️ Breaking change
+## Como validar
 
-- [ ] **Sim** — se marcado, o corpo do commit precisa conter `BREAKING CHANGE:`
-- [ ] Não
+```bash
+python -m pytest
+python -m ruff check src tests
+python -m compileall -q src run.py
+python scripts/verify_repository.py
+```
 
-## 🧪 Como testar
+Descreva também a verificação manual realizada no jogo, quando aplicável.
 
-<!-- Passos objetivos que o revisor consegue reproduzir. -->
+## Checklist
 
-1. `pip install -r requirements.txt`
-2. `python run.py`
-3. Navegue até…
-4. Verifique que…
+- [ ] O PR tem escopo único e título em Conventional Commits.
+- [ ] Testes novos foram adicionados quando necessário.
+- [ ] CI local passa sem erros.
+- [ ] Não inclui `.venv`, caches, saves, logs ou segredos.
+- [ ] Assets têm origem/crédito e foram revisados.
+- [ ] README, changelog ou docs foram atualizados quando necessário.
+- [ ] Testei as regiões afetadas em 1280×720.
 
-## ✅ Checklist do autor
+## Issue relacionada
 
-**Código**
-- [ ] `pytest` passa localmente (`python -m pytest`)
-- [ ] Novos comportamentos têm teste
-- [ ] Sem `print` de depuração ou código comentado para trás
-
-**Jogo**
-- [ ] O jogo abre e roda sem erros
-- [ ] Testei no mapa/afetado do PR
-- [ ] Testei em 1280×720 **e** em tela cheia (se mexeu em UI)
-
-**Repositório**
-- [ ] Commits seguem [Conventional Commits](../docs/COMMIT_CONVENTION.md)
-- [ ] Nenhum temporário incluído (`__pycache__`, `.venv`, `.ruff_cache`)
-- [ ] Nenhum segredo ou credencial versionado
-- [ ] Atualizei `docs/` se o comportamento mudou
-
-## 📸 Capturas de tela
-
-<!-- Obrigatório para mudança visual: antes / depois. -->
-
-| Antes | Depois |
-| --- | --- |
-| | |
-
-## 📝 Notas para o revisor
-
-<!-- Arquivos sensíveis, decisões discutíveis, dívida técnica consciente. -->
+<!-- `Closes #123`, `Fixes #123` ou `Refs #123`. -->

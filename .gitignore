@@ -13,6 +13,11 @@ sdist/
 wheels/
 pip-wheel-metadata/
 MANIFEST
+*.whl
+*.tar.gz
+# Pacotes e relatórios gerados pela automação de release
+release-artifacts/
+SHA256SUMS.txt
 
 # ============================================================ Ambientes virtuais
 .venv/
