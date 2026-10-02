@@ -105,7 +105,7 @@ Aplique o padrão abaixo. *Em repositórios privados, algumas opções exigem Gi
 | **Dismiss stale pull request approvals** | ✅ | Aprovação expira se houver novo commit |
 | **Require review from Code Owners** | ✅ | Dono do módulo revisa o módulo |
 | **Require status checks to pass** | ✅ | CI verde é obrigatório |
-| **Required status checks** | `pytest`, `lint` | Testes e estilo |
+| **Required status checks** | `pytest`, `ruff` | Testes e estilo |
 | **Require branches to be up to date** | ✅ | Sem merge surpresa |
 | **Require conversation resolution** | ✅ | Nenhuma discussão pendente |
 | **Require signed commits** | opcional | Recomendado se o time tiver GPG |
@@ -122,7 +122,7 @@ Mesmo padrão, com três diferenças:
 | --- | --- |
 | Required approving reviews | **1** |
 | Allow force pushes | ✅ **Apenas para admins** (facilita *rebase* na semana) |
-| Required status checks | ✅ `pytest` |
+| Required status checks | ✅ `pytest`, `ruff` |
 
 ### 4.3 `release/*` e `hotfix/*`
 
@@ -130,7 +130,7 @@ Mesmo padrão, com três diferenças:
 | --- | --- |
 | Require a pull request before merging | ✅ |
 | Required approving reviews | **1** |
-| Required status checks | ✅ `pytest`, `lint` |
+| Required status checks | ✅ `pytest`, `ruff` |
 | Restrict deletions | ✅ |
 
 ### 4.4 Ramos históricos (`historico/*`)
@@ -157,7 +157,7 @@ main:
       ☑ Require approvals: 1
       ☑ Dismiss stale pull request approvals
       ☑ Require review from Code Owners
-  ☑ Require status checks to pass → pytest, lint
+  ☑ Require status checks to pass → pytest, ruff
       ☑ Require branches to be up to date
   ☑ Require conversation resolution
   ☑ Include administrators
@@ -168,7 +168,7 @@ develop:
   ☑ Require a pull request before merging
       ☑ Require approvals: 1
       ☑ Dismiss stale pull request approvals
-  ☑ Require status checks to pass → pytest
+  ☑ Require status checks to pass → pytest, ruff
   ☑ Require conversation resolution
   ☑ Include administrators
   ☑ Allow force pushes → Administrators only
