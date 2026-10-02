@@ -5,6 +5,17 @@ Todas as mudanças notáveis do projeto são documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [4.0.1] — 2026-10-02
+
+### Adicionado
+- Workflow de CI (`.github/workflows/ci.yml`) com os jobs `ruff` e `pytest`
+- Suite de testes (`tests/`) cobrindo layout, conteudo e balanceamento
+- Guia de branches e regras de protecao de ramo (`docs/BRANCHING.md`)
+- Hook de validacao de mensagens de commit (`.githooks/commit-msg`)
+
+### Corrigido
+- Nomes dos checks de CI no guia de branches (`ruff` e `pytest`, antes `lint`)
+
 ## [4.0.0] — 2026-10-02
 
 ### Adicionado
