@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pygame
 
-from src.engine.animation2d import SpriteSheet
+from src.engine.animation2d import SpriteSheet, load_frames
 from src.engine.asset_paths import game_root
 
 ROOT = game_root()
@@ -62,10 +62,8 @@ def _fit_actor(source: pygame.Surface, body_height: int) -> pygame.Surface:
 
 
 def _frames(folder: Path) -> list[pygame.Surface]:
-    return [
-        pygame.image.load(str(path)).convert_alpha()
-        for path in sorted(folder.glob("frame_*.png"))
-    ]
+    """Carrega quadros preservando compatibilidade com execução headless."""
+    return load_frames(sorted(folder.glob("frame_*.png")))
 
 
 def _normalize_sequence(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import pygame
 import pytest
 import src.main as game
+from src.game.beta4_scenario_runtime import ScenarioRuntime
 
 REGIOES = tuple(game.REGIONS)
 FAIXAS = range(game.ROWS)
@@ -20,6 +21,15 @@ def _headless():
     """Garante o subsistema de vídeo antes de criar Rects."""
     if not pygame.get_init():
         pygame.init()
+
+
+def test_runtime_dos_cenarios_carrega_sem_surface_de_video():
+    """O carregamento de assets não pode exigir janela em CI ou ferramentas."""
+    pygame.display.quit()
+    runtime = ScenarioRuntime()
+    assert runtime.generals
+    assert runtime.tractor
+    pygame.display.set_mode((1, 1))
 
 
 # --------------------------------------------------------------- faixas

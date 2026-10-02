@@ -13,43 +13,73 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SDL_VIDEODRIVER: dummy
+  SDL_AUDIODRIVER: dummy
+
 jobs:
-  lint:
+  ruff:
     name: ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Preparar Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
-
-      - name: Instalar ruff
+          cache-dependency-path: pyproject.toml
+      - name: Instalar Ruff
         run: python -m pip install --upgrade "ruff>=0.6"
-
-      - name: Checar estilo
+      - name: Verificar estilo
         run: python -m ruff check src tests
 
-  test:
+  pytest:
     name: pytest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Preparar Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: pyproject.toml
+      - name: Instalar projeto e testes
+        run: python -m pip install -e ".[dev]"
+      - name: Executar testes
+        run: python -m pytest -ra
 
-      - name: Instalar dependencias
-        run: python -m pip install -r requirements.txt "pytest>=8.0"
-
-      # O jogo nao abre janela em CI: conftest.py fornece drivers SDL nulos.
-      - name: Rodar testes
-        run: python -m pytest -v
-        env:
-          SDL_VIDEODRIVER: dummy
-          SDL_AUDIODRIVER: dummy
+  package-smoke:
+    name: package-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Instalar projeto
+        run: python -m pip install -e ".[dev]"
+      - name: Validar estrutura
+        run: python scripts/verify_repository.py
+      - name: Compilar código
+        run: python -m compileall -q src run.py
+      - name: Carregar assets em modo headless
+        run: |
+          python - <<'PY'
+          import pygame
+          pygame.init()
+          from src.game.beta4_production_animations import build_production_clips
+          from src.game.beta4_scenario_runtime import ScenarioRuntime
+          assert build_production_clips()
+          runtime = ScenarioRuntime()
+          assert runtime.generals and runtime.tractor and runtime.drone and runtime.splash
+          pygame.quit()
+          print("runtime e assets carregados")
+          PY

@@ -5,6 +5,21 @@ Todas as mudanças notáveis do projeto são documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
 e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [4.0.2] — 2026-10-02
+
+### Adicionado
+- README refeito com instalação, comandos, estrutura e releases.
+- Guia de organização de pastas em `docs/REPOSITORY_GUIDE.md`.
+- Processo de release, tags e pacotes em `docs/releases/`.
+- `CODEOWNERS`, Dependabot e configuração de templates do GitHub.
+- CI com checks `ruff`, `pytest` e `package-smoke`.
+- Workflow de publicação automática para tags SemVer.
+- Verificador de higiene em `scripts/verify_repository.py`.
+
+### Alterado
+- Fluxo de branches e contribuição alinhado à proteção real do GitHub.
+- Projeto atualizado para a versão `4.0.2`.
+
 ## [4.0.1] — 2026-10-02
 
 ### Adicionado
