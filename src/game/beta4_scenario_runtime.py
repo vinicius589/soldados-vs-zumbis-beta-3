@@ -297,7 +297,7 @@ class ScenarioRuntime:
         width = round(54 + 30 * growth)
         height = round(84 + 48 * growth)
         for offset, (anchor, depth) in enumerate(
-            zip(DESERT_BRAZIER_ANCHORS, depth_scales)
+            zip(DESERT_BRAZIER_ANCHORS, depth_scales, strict=False)
         ):
             flame = _fit(
                 self.brazier[(frame_index + offset * 3) % 8],
