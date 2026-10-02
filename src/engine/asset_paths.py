@@ -5,7 +5,8 @@ import sys
 
 
 def game_root() -> Path:
-    source = Path(__file__).resolve().parent
+    # src/engine/asset_paths.py → src/engine/ → src/ → raiz do projeto
+    source = Path(__file__).resolve().parent.parent.parent
     if not getattr(sys, "frozen", False):
         return source
 

@@ -1,18 +1,58 @@
-# Artefatos locais de execução e compilação
+# ─── Python ───────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-.venv-beta4/
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
 
-# Copias locais do acervo historico: publicadas separadamente nos Releases.
+# ─── Ambientes Virtuais ──────────────────────────────────────────────
+.venv/
+.venv-beta4/
+venv/
+ENV/
+
+# ─── IDEs e Editores ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ─── Sistema Operacional ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Acervo Histórico (publicado nos Releases separadamente) ────────
 alphas/
 betas/
 material-bruto/
 Soldados vs Zumbis Beta 4/
 
-# Progresso pessoal gerado pelo jogo
+# ─── Progresso pessoal gerado pelo jogo ──────────────────────────────
 campanha_v7.json
 campaign_progress.json
 
-# Capturas geradas novamente pelas ferramentas da Beta 4.
+# ─── Capturas geradas pelas ferramentas da Beta 4 ────────────────────
 visual_qa_beta4/*
 !visual_qa_beta4/entrega/
+
+# ─── Testes e cobertura ──────────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ─── Diversos ────────────────────────────────────────────────────────
+*.log
+*.bak
+*.tmp

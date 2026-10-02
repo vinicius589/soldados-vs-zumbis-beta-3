@@ -20,13 +20,13 @@ from typing import Callable
 
 import pygame
 
-from asset_paths import game_root
-from animation2d import AnimationManager
-from beta4_expansion_roster import EXPANSION_DEFENDERS
-from beta4_production_animations import build_production_clips, new_production_animation
-from beta4_scenario_runtime import ScenarioRuntime
-from opengl_presenter import ActorCommand, OpenGLPresenter
-from visual_layout import (
+from src.engine.asset_paths import game_root
+from src.engine.animation2d import AnimationManager
+from src.game.beta4_expansion_roster import EXPANSION_DEFENDERS
+from src.game.beta4_production_animations import build_production_clips, new_production_animation
+from src.game.beta4_scenario_runtime import ScenarioRuntime
+from src.engine.opengl_presenter import ActorCommand, OpenGLPresenter
+from src.game.visual_layout import (
     DEFENDER_WEAPON_PROFILES,
     ENEMY_ATTACK_ORIGINS,
     ENEMY_BODY_LAYOUTS,
@@ -7846,7 +7846,9 @@ class Game:
             self.draw_battle()
 
 
-if __name__ == "__main__":
+
+def main():
+    """Ponto de entrada do jogo Soldados vs Zumbis."""
     if "--verificar-pacote" in sys.argv[1:]:
         os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
         os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -7863,3 +7865,7 @@ if __name__ == "__main__":
         print("PACOTE_OK")
     else:
         Game(integration_preview="--integracao-beta4" in sys.argv[1:]).run()
+
+
+if __name__ == "__main__":
+    main()

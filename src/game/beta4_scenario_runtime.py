@@ -10,15 +10,15 @@ from typing import Any
 import numpy as np
 import pygame
 
-from animation2d import SpriteSheet
+from src.engine.animation2d import SpriteSheet
 
 
-from asset_paths import game_root
+from src.engine.asset_paths import game_root
 
 ROOT = game_root()
-SCENARIO_ROOT = ROOT / "CENARIOS_BETA4_CONCEITOS"
+SCENARIO_ROOT = ROOT / "tools" / "cenarios"
 AMBIENT = SCENARIO_ROOT / "animacao_ambiental"
-PIXEL = ROOT / "PIXEL_ART_SPRITES_BETA4" / "frames_sem_chroma"
+PIXEL = ROOT / "tools" / "sprites" / "frames_sem_chroma"
 
 COMMAND_ANCHORS = {
     # Ambos ficam no piso livre da base, abaixo das cabanas, sem encostar em

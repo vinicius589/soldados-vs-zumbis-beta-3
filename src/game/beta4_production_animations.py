@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pygame
 
-from animation2d import AnimationClip, AnimationManager, SpriteSheet
+from src.engine.animation2d import AnimationClip, AnimationManager, SpriteSheet
 
 
-from asset_paths import game_root
+from src.engine.asset_paths import game_root
 
 ROOT = game_root()
 ASSETS = ROOT / "assets" / "beta4_producao"

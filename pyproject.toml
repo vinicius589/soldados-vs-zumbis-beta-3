@@ -1,0 +1,41 @@
+[project]
+name = "soldados-vs-zumbis"
+version = "4.0.0"
+description = "Tower defense 2D original em Pygame — projeto acadêmico de programação."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Equipe Soldados vs Zumbis"},
+]
+keywords = ["tower-defense", "pygame", "jogo", "acadêmico"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Real Time Strategy",
+]
+dependencies = [
+    "pygame-ce==2.5.8",
+    "PyOpenGL==3.1.10",
+    "numpy==2.5.3",
+    "Pillow==12.3.0",
+]
+
+[project.scripts]
+soldados-vs-zumbis = "src.main:main"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

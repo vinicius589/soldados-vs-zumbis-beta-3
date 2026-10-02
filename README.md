@@ -1,34 +1,134 @@
-# Soldados vs Zumbis — Beta 4
+# 🎮 Soldados vs Zumbis — Beta 4
 
-Este repositório abre diretamente na versão jogável atual. É um jogo de defesa por faixas: escolha tropas, administre suprimentos e detenha os infectados em Nova York, no Deserto e na Cachoeira de Minas Gerais. Cada mapa tem oito cartas e uma campanha de 12 ondas (duas comuns, uma de subchefe e uma de chefe, por ciclo).
+> **Projeto acadêmico de programação** — Tower defense original em Python/Pygame
 
-## Jogar no Windows 10/11
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python&logoColor=white)](https://python.org)
+[![Pygame-CE](https://img.shields.io/badge/Pygame--CE-2.5.8-green?logo=python)](https://pyga.me)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-1. No botão verde **Code**, escolha **Download ZIP**.
-2. Aguarde o download completo e **extraia o ZIP inteiro** pelo Explorador do Windows, 7-Zip ou WinRAR. O pacote é grande porque já contém as imagens e os sons; não há outro download de recursos.
-3. Abra a pasta extraída e dê dois cliques em **`JOGAR AGORA.exe`**, que está ao lado deste README. Não precisa instalar Python nem procurar outra pasta do jogo.
+Um jogo de defesa por faixas: escolha tropas, administre suprimentos e detenha
+os infectados em **Nova York**, no **Deserto do Egito** e na **Cachoeira de
+Minas Gerais**. Cada mapa tem oito cartas e uma campanha de 12 ondas (duas
+comuns, uma de subchefe e uma de chefe, por ciclo).
 
-Não execute o jogo de dentro do ZIP e não mova o `.exe` sozinho: as pastas de arte e áudio precisam ficar ao lado dele. O executável não é assinado digitalmente; se o Windows pedir confirmação, confira que o arquivo veio deste repositório. Ele foi testado no Windows 11; o Windows 10 ainda precisa de teste em outra máquina.
+---
 
-## Jogar pelo código no macOS ou Linux
+## 📋 Sumário
 
-Não há executável nativo pronto para esses sistemas. Com Python 3.12 ou mais recente instalado, abra o terminal **na pasta extraída**, ao lado de `main.py`, e rode:
+- [Jogar no Windows](#-jogar-no-windows-1011)
+- [Executar pelo Código-Fonte](#-executar-pelo-código-fonte)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
+- [Documentação](#-documentação)
+- [Como Contribuir](#-como-contribuir)
+- [Versões Anteriores](#-versões-anteriores)
+- [Licença](#-licença)
+
+---
+
+## 🖥️ Jogar no Windows 10/11
+
+1. No botão verde **Code**, escolha **Download ZIP**
+2. **Extraia o ZIP inteiro** (7-Zip, WinRAR ou Explorador do Windows)
+3. Abra a pasta extraída e execute **`JOGAR AGORA.exe`**
+
+> [!WARNING]
+> Não execute o jogo de dentro do ZIP e não mova o `.exe` sozinho — as pastas
+> de arte e áudio precisam ficar ao lado dele. O executável não é assinado
+> digitalmente; confirme que o arquivo veio deste repositório.
+
+---
+
+## 💻 Executar pelo Código-Fonte
+
+**Requisitos:** Python 3.12 ou superior
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 main.py
+# Clone o repositório
+git clone https://github.com/vinicius589/soldados-vs-zumbis-beta-4.git
+cd soldados-vs-zumbis-beta-4
+
+# Crie e ative um ambiente virtual
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+# Instale as dependências
+pip install -r requirements.txt
+
+# Execute o jogo
+python run.py
 ```
 
-As mesmas instruções servem para quem prefere rodar o código no Windows, substituindo `python3` por `py` quando necessário. macOS e Linux ainda precisam de teste gráfico em computadores reais; o código e os recursos estão no ZIP, mas não prometemos execução com um clique nessas plataformas.
+> [!NOTE]
+> Substitua `python` por `py` no Windows ou `python3` no macOS/Linux,
+> conforme necessário. O jogo usa CPU como caminho padrão, sem exigir
+> placa de vídeo dedicada.
 
-## O que vem no ZIP
+---
 
-`main.py` e os demais `.py` são o jogo; `assets/`, `CENARIOS_BETA4_CONCEITOS/`, `PIXEL_ART_SPRITES_BETA4/` e `PROTOTIPO_CARTA_CAMPO/` guardam os recursos que ele usa. `requirements.txt` lista as bibliotecas para rodar pelo código. O jogo usa CPU e memória como caminho padrão, sem exigir placa de vídeo dedicada.
+## 📁 Estrutura do Projeto
 
-O botão **Code → Download ZIP** entrega **somente a Beta 4 atual**, pronta para abrir no Windows após extrair. Ele não mistura outras Alfas/Betas nem pede para localizar arquivos em outra pasta.
+```
+soldados-vs-zumbis-beta-4/
+├── src/                          # Código-fonte
+│   ├── main.py                   # Game loop, UI, campanha
+│   ├── engine/                   # Motores reutilizáveis
+│   │   ├── animation2d.py        #   Animação 2D, sprites, VFX
+│   │   ├── opengl_presenter.py   #   Compositor OpenGL + shaders
+│   │   └── asset_paths.py        #   Resolução de caminhos
+│   └── game/                     # Lógica específica do jogo
+│       ├── visual_layout.py      #   Contratos de tamanho/ancoragem
+│       ├── beta4_expansion_roster.py
+│       ├── beta4_production_animations.py
+│       └── beta4_scenario_runtime.py
+├── assets/                       # Recursos visuais e sonoros
+├── tools/                        # Scripts de produção (cenários, sprites)
+├── tests/                        # Testes automatizados
+├── docs/                         # Documentação do projeto
+├── .github/                      # Templates de Issues e PRs
+├── run.py                        # Ponto de entrada
+├── pyproject.toml                # Configuração Python
+├── requirements.txt              # Dependências
+└── JOGAR AGORA.exe               # Executável Windows
+```
 
-## Versões anteriores e colaboração
+---
 
-As versões de referência, Alfas de correção, Betas anteriores e textos de desenvolvimento estão nos [Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases), separados do download principal. O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases/tag/historico-corrigido-2026-09-30) é para consulta e pode exigir Python. A Beta 1 original, feita com desenhos simples, não foi localizada; não apresentamos uma recriação como se fosse o arquivo autêntico.
+## 📚 Documentação
 
-A Beta 4 é a base para a equipe continuar o projeto. As Alfas registram correções entre marcos de conteúdo, enquanto as Betas marcam as versões ampliadas. Ainda há espaço para refinar arte, som e balanceamento com testes dos colegas e do professor; apontem o mapa, a onda, a unidade e, se possível, uma captura quando acharem um defeito.
+| Documento | Descrição |
+|-----------|-----------|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Diagrama de módulos e fluxo de dados |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Como configurar o ambiente e contribuir |
+| [`docs/COMMIT_CONVENTION.md`](docs/COMMIT_CONVENTION.md) | Padrão Conventional Commits |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Histórico de mudanças |
+
+---
+
+## 🤝 Como Contribuir
+
+1. Leia o [guia de contribuição](docs/CONTRIBUTING.md)
+2. Crie uma branch a partir de `develop` seguindo o padrão:
+   - `feat/nome` · `fix/nome` · `art/nome` · `docs/nome`
+3. Use [Conventional Commits](docs/COMMIT_CONVENTION.md)
+4. Abra um Pull Request para `develop`
+
+Ao reportar bugs, informe: **mapa**, **onda**, **unidade** e, se possível,
+anexe uma captura de tela.
+
+---
+
+## 📦 Versões Anteriores
+
+As versões de referência, Alfas de correção, Betas anteriores e textos de
+desenvolvimento estão nos [Releases](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases).
+O [pacote histórico completo](https://github.com/vinicius589/soldados-vs-zumbis-beta-4/releases/tag/historico-corrigido-2026-09-30)
+é para consulta e pode exigir Python.
+
+---
+
+## 📄 Licença
+
+Este projeto está licenciado sob a [Licença MIT](LICENSE).
