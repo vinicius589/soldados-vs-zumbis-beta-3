@@ -2,6 +2,10 @@
 # As regras LFS abaixo só se aplicam ao acervo historico preservado em commits antigos.
 *.sh text eol=lf
 *.command text eol=lf
+
+# Hooks do git precisam de LF para rodar no sh (Windows também).
+.githooks/** text eol=lf
+.githooks/* text eol=lf
 alphas/**/*.png filter=lfs diff=lfs merge=lfs -text
 alphas/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 alphas/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
