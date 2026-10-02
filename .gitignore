@@ -1,0 +1,14 @@
+# Artefatos locais de execução e compilação
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+.vscode/
+
+# Ignorar pastas de sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de log e testes locais
+*.log
+coverage_html/

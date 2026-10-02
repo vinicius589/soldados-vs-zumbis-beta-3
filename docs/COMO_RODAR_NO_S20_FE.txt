@@ -1,0 +1,13 @@
+SOLDADOS VS ZUMBIS V20 - SAMSUNG S20 FE
+
+1. Extraia o ZIP no Pydroid 3.
+2. Abra a pasta do projeto.
+3. Execute main.py.
+
+A versao Android usa uma tela virtual de 1280x720 e amplia automaticamente para a tela inteira do aparelho.
+Os toques sao convertidos para as coordenadas originais do jogo, portanto os botoes continuam funcionando.
+
+Se o Pydroid deixar barras pretas por causa da propria janela, ative no Pydroid 3 as opcoes de tela cheia/maximizada nas configuracoes do aplicativo.
+
+Dependencia original do projeto:
+pygame-ce==2.5.8

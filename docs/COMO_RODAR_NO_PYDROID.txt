@@ -1,0 +1,23 @@
+SOLDADOS VS ZUMBIS V20 - PYDROID 3
+
+ESTRUTURA:
+- main.py              -> launcher
+- game.py              -> jogo principal
+- core/base.py         -> classe Base
+- core/input.py        -> entrada de teclado/mouse
+- requirements.txt     -> pygame-ce 2.5.8
+
+COMO RODAR:
+1. Extraia esta pasta no armazenamento do Android.
+2. Abra a pasta no Pydroid 3.
+3. Instale a dependencia do requirements.txt:
+   pip install -r requirements.txt
+4. Execute main.py.
+
+IMPORTANTE:
+O projeto foi preparado para pygame-ce 2.5.8. Se o Pydroid estiver usando
+pygame 2.6.1 em vez de pygame-ce, pode ocorrer erro na inicializacao do SDL.
+Nesse caso, confirme no terminal:
+   python -c "import pygame; print(pygame.version.ver)"
+
+A tela do jogo usa 1280x720.
