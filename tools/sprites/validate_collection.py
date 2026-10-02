@@ -11,7 +11,6 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 
-
 ROOT = Path(__file__).resolve().parent
 
 

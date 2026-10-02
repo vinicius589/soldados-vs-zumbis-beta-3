@@ -11,10 +11,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "prontos_1280x720" / "02_egito_escavacao_helix_entrada_unica_v4.png"
-CLEAN_REFERENCE = ROOT / "variantes_imagegen" / "02_egito_piras_apagadas_imagegen_1280x720.png"
+CLEAN_REFERENCE = (
+    ROOT / "variantes_imagegen" / "02_egito_piras_apagadas_imagegen_1280x720.png"
+)
 OUTPUT = ROOT / "prontos_1280x720" / "02_egito_escavacao_helix_piras_apagadas_v5.png"
 
 

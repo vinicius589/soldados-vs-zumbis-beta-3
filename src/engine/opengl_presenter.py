@@ -8,8 +8,8 @@ shader para correção de cor, contraste, vinheta e iluminação ambiente.
 from __future__ import annotations
 
 import ctypes
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import pygame
 
@@ -393,8 +393,12 @@ class OpenGLPresenter:
         self.closed = False
 
         self.program = self._link_program(self.VERTEX_SHADER, self.FRAGMENT_SHADER)
-        self.actor_program = self._link_program(self.ACTOR_VERTEX_SHADER, self.ACTOR_FRAGMENT_SHADER)
-        self.overlay_program = self._link_program(self.VERTEX_SHADER, self.OVERLAY_FRAGMENT_SHADER)
+        self.actor_program = self._link_program(
+            self.ACTOR_VERTEX_SHADER, self.ACTOR_FRAGMENT_SHADER
+        )
+        self.overlay_program = self._link_program(
+            self.VERTEX_SHADER, self.OVERLAY_FRAGMENT_SHADER
+        )
         self.frame_texture = self._make_texture(self.width, self.height)
         self.overlay_texture = self._make_texture(self.width, self.height)
         self._make_actor_mesh(columns=12, rows=14)
@@ -406,7 +410,9 @@ class OpenGLPresenter:
         self.uniform_tint = GL.glGetUniformLocation(self.program, "u_tint")
         self.uniform_time = GL.glGetUniformLocation(self.program, "u_time")
         self.uniform_strength = GL.glGetUniformLocation(self.program, "u_strength")
-        self.uniform_overlay = GL.glGetUniformLocation(self.overlay_program, "u_overlay")
+        self.uniform_overlay = GL.glGetUniformLocation(
+            self.overlay_program, "u_overlay"
+        )
         self.actor_uniforms = {
             name: GL.glGetUniformLocation(self.actor_program, name)
             for name in (
@@ -453,7 +459,16 @@ class OpenGLPresenter:
                 top_right = top_left + 1
                 bottom_left = top_left + stride
                 bottom_right = bottom_left + 1
-                indices.extend((top_left, top_right, bottom_right, top_left, bottom_right, bottom_left))
+                indices.extend(
+                    (
+                        top_left,
+                        top_right,
+                        bottom_right,
+                        top_left,
+                        bottom_right,
+                        bottom_left,
+                    )
+                )
 
         vertex_data = numpy.asarray(vertices, dtype=numpy.float32)
         index_data = numpy.asarray(indices, dtype=numpy.uint16)
@@ -461,13 +476,19 @@ class OpenGLPresenter:
         self.actor_ebo = int(GL.glGenBuffers(1))
         self.actor_index_count = int(index_data.size)
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, self.actor_vbo)
-        GL.glBufferData(GL.GL_ARRAY_BUFFER, vertex_data.nbytes, vertex_data, GL.GL_STATIC_DRAW)
+        GL.glBufferData(
+            GL.GL_ARRAY_BUFFER, vertex_data.nbytes, vertex_data, GL.GL_STATIC_DRAW
+        )
         GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, self.actor_ebo)
-        GL.glBufferData(GL.GL_ELEMENT_ARRAY_BUFFER, index_data.nbytes, index_data, GL.GL_STATIC_DRAW)
+        GL.glBufferData(
+            GL.GL_ELEMENT_ARRAY_BUFFER, index_data.nbytes, index_data, GL.GL_STATIC_DRAW
+        )
         GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0)
         GL.glBindBuffer(GL.GL_ELEMENT_ARRAY_BUFFER, 0)
 
-    def _make_texture(self, width: int, height: int, pixels: bytes | None = None) -> int:
+    def _make_texture(
+        self, width: int, height: int, pixels: bytes | None = None
+    ) -> int:
         """Cria uma textura RGBA com filtragem suave e bordas estáveis."""
         GL = self.gl
         texture = int(GL.glGenTextures(1))
@@ -616,15 +637,23 @@ class OpenGLPresenter:
             float(command.x),
             float(command.ground_y + command.vertical_offset),
         )
-        GL.glUniform2f(uniforms["u_size"], max(1.0, command.width), max(1.0, command.height))
+        GL.glUniform2f(
+            uniforms["u_size"], max(1.0, command.width), max(1.0, command.height)
+        )
         GL.glUniform2f(uniforms["u_screen"], float(self.width), float(self.height))
         GL.glUniform1f(uniforms["u_time"], max(0.0, float(command.elapsed)))
         GL.glUniform1f(uniforms["u_direction"], -1.0 if command.enemy else 1.0)
-        GL.glUniform1f(uniforms["u_progress"], max(0.0, min(1.0, float(command.progress))))
+        GL.glUniform1f(
+            uniforms["u_progress"], max(0.0, min(1.0, float(command.progress)))
+        )
         GL.glUniform1i(uniforms["u_state"], self.STATE_CODES.get(command.state, 0))
-        GL.glUniform1i(uniforms["u_profile"], self.PROFILE_CODES.get(command.profile, 0))
+        GL.glUniform1i(
+            uniforms["u_profile"], self.PROFILE_CODES.get(command.profile, 0)
+        )
         GL.glUniform1f(uniforms["u_alpha"], max(0.0, min(1.0, command.alpha / 255.0)))
-        GL.glUniform1f(uniforms["u_flash"], max(0.0, min(1.0, command.hit_flash / 0.13)))
+        GL.glUniform1f(
+            uniforms["u_flash"], max(0.0, min(1.0, command.hit_flash / 0.13))
+        )
 
         GL.glDrawElements(
             GL.GL_TRIANGLES,
@@ -677,7 +706,10 @@ class OpenGLPresenter:
         if actors:
             self._begin_actor_batch()
             try:
-                for command in sorted(actors, key=lambda actor: (actor.ground_y + actor.vertical_offset, actor.x)):
+                for command in sorted(
+                    actors,
+                    key=lambda actor: (actor.ground_y + actor.vertical_offset, actor.x),
+                ):
                     self._draw_actor(command)
             finally:
                 self._end_actor_batch()
@@ -697,7 +729,11 @@ class OpenGLPresenter:
             return
         self.closed = True
         GL = self.gl
-        textures = [self.frame_texture, self.overlay_texture, *self.sprite_textures.values()]
+        textures = [
+            self.frame_texture,
+            self.overlay_texture,
+            *self.sprite_textures.values(),
+        ]
         textures = [int(texture) for texture in textures if texture]
         if textures:
             GL.glDeleteTextures(textures)

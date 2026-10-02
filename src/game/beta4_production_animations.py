@@ -13,8 +13,6 @@ from pathlib import Path
 import pygame
 
 from src.engine.animation2d import AnimationClip, AnimationManager, SpriteSheet
-
-
 from src.engine.asset_paths import game_root
 
 ROOT = game_root()
@@ -175,7 +173,19 @@ ROSTER_GRID_COLUMNS = {
 # cabeça, bota ou arma da linha vizinha. O deserto já respeita a grade regular.
 ROSTER_VERTICAL_BOUNDS: dict[str, tuple[int, ...]] = {
     "city_enemy_roster_8x12_v1.png": (
-        0, 105, 212, 279, 383, 475, 572, 660, 747, 835, 920, 994, 1086,
+        0,
+        105,
+        212,
+        279,
+        383,
+        475,
+        572,
+        660,
+        747,
+        835,
+        920,
+        994,
+        1086,
     ),
     # As folhas de elites usam seis faixas visuais com bastante respiro. O
     # gerador manteve as linhas, mas distribuiu alturas diferentes para um
@@ -222,10 +232,17 @@ SOLDIER_TIMING: dict[str, tuple[float, float, float]] = {
 # dos oito quadros muda (retirada, pausa visível, inserção e retorno à mira).
 SOLDIER_RELOAD_WEIGHT: dict[str, float] = {
     actor: (
-        1.22 if any(token in actor for token in ("sniper", "rocket", "mortar", "sub"))
-        else 1.12 if any(token in actor for token in ("heavy", "grenadier", "boat"))
-        else 0.94 if any(token in actor for token in ("guard", "blade", "shield"))
-        else 1.0
+        1.22
+        if any(token in actor for token in ("sniper", "rocket", "mortar", "sub"))
+        else (
+            1.12
+            if any(token in actor for token in ("heavy", "grenadier", "boat"))
+            else (
+                0.94
+                if any(token in actor for token in ("guard", "blade", "shield"))
+                else 1.0
+            )
+        )
     )
     for actor in SOLDIER_TIMING
 }
@@ -357,13 +374,12 @@ def _remove_baked_waterjet(frame: pygame.Surface) -> pygame.Surface:
     green = rgb[:, :, 1].astype("int16")
     blue = rgb[:, :, 2].astype("int16")
     water_color = (
-        (blue >= 105)
-        & (green >= 80)
-        & (blue >= red + 20)
-        & (green >= red + 8)
+        (blue >= 105) & (green >= 80) & (blue >= red + 20) & (green >= red + 8)
     )
     foam = (red >= 145) & (green >= 165) & (blue >= 175)
-    alpha[start:hard_cut, :][water_color[start:hard_cut, :] | foam[start:hard_cut, :]] = 0
+    alpha[start:hard_cut, :][
+        water_color[start:hard_cut, :] | foam[start:hard_cut, :]
+    ] = 0
     alpha[hard_cut:, :] = 0
     target_alpha = pygame.surfarray.pixels_alpha(cleaned)
     target_alpha[:, :] = alpha
@@ -413,14 +429,18 @@ def _extract_full_actor_component(
             continue
         values = projection[low : high + 1]
         minimum = values.min()
-        options = [low + index for index, value in enumerate(values) if value == minimum]
+        options = [
+            low + index for index, value in enumerate(values) if value == minimum
+        ]
         boundaries.append(min(options, key=lambda x: abs(x - nominal)))
     boundaries.append(width)
     left, right = boundaries[column], boundaries[column + 1]
     if right - left < max(12, round(cell_width * 0.45)):
         left = round(column * cell_width)
         right = round((column + 1) * cell_width)
-    return surface.subsurface((left, row_top, right - left, row_bottom - row_top)).copy()
+    return surface.subsurface(
+        (left, row_top, right - left, row_bottom - row_top)
+    ).copy()
 
 
 def _normalize_actor_height(
@@ -610,9 +630,7 @@ def _soldier_clips(
     reload_weight: float = 1.0,
     actor: str = "",
 ) -> dict[str, AnimationClip]:
-    move, idle, shoot, reload, hit = _sheet_rows(
-        path, 5, 130, sanitize=sanitize
-    )
+    move, idle, shoot, reload, hit = _sheet_rows(path, 5, 130, sanitize=sanitize)
     # O clarão e a cápsula da própria folha não são mais desenhados junto do
     # soldado. O jogo já posiciona um único clarão no cano e o projétil real
     # sai desse mesmo ponto; conservar partículas soltas na pose criava um
@@ -653,13 +671,19 @@ def _soldier_clips(
     return {
         "move": AnimationClip.timed(
             groups["move"],
-            tuple(value / move_fps for value in (0.82, 1.08, 1.22, 0.88, 0.82, 1.08, 1.22, 0.88)),
+            tuple(
+                value / move_fps
+                for value in (0.82, 1.08, 1.22, 0.88, 0.82, 1.08, 1.22, 0.88)
+            ),
             name="implantação",
         ),
         "idle": AnimationClip.uniform(groups["idle"], fps=5.0, name="pronto"),
         "shoot": AnimationClip.timed(
             groups["shoot"],
-            tuple(value / shoot_fps for value in (0.58, 0.72, 0.82, 1.36, 1.24, 0.96, 0.72, 0.60)),
+            tuple(
+                value / shoot_fps
+                for value in (0.58, 0.72, 0.82, 1.36, 1.24, 0.96, 0.72, 0.60)
+            ),
             loop=False,
             name="disparo",
         ),
@@ -694,8 +718,24 @@ def _support_clips(path: Path) -> dict[str, AnimationClip]:
         "idle": AnimationClip.uniform(groups["idle"], fps=4.5, name="aguarda"),
         "support": AnimationClip.timed(
             groups["support"],
-            (0.08, 0.09, 0.10, 0.11, 0.11, 0.10, 0.09, 0.08,
-             0.08, 0.09, 0.10, 0.11, 0.11, 0.10, 0.09, 0.08),
+            (
+                0.08,
+                0.09,
+                0.10,
+                0.11,
+                0.11,
+                0.10,
+                0.09,
+                0.08,
+                0.08,
+                0.09,
+                0.10,
+                0.11,
+                0.11,
+                0.10,
+                0.09,
+                0.08,
+            ),
             loop=False,
             name="solicitação de suprimentos",
         ),
@@ -742,7 +782,11 @@ def _zombie_clips(
         # Normalizar apenas as poses invertidas mantém toda a corrida voltada
         # para os defensores, sem espelhar as que já estavam corretas.
         move = [
-            pygame.transform.flip(frame, True, False) if index in flip_move_indices else frame
+            (
+                pygame.transform.flip(frame, True, False)
+                if index in flip_move_indices
+                else frame
+            )
             for index, frame in enumerate(move)
         ]
     # Mordida e dano também passam pela inspeção de componentes. Isso remove
@@ -762,7 +806,10 @@ def _zombie_clips(
         "idle": AnimationClip.uniform(groups["idle"], fps=4.5, name="ameaça"),
         "bite": AnimationClip.timed(
             groups["bite"],
-            tuple(value / bite_speed for value in (0.17, 0.15, 0.15, 0.14, 0.17, 0.20, 0.18, 0.17)),
+            tuple(
+                value / bite_speed
+                for value in (0.17, 0.15, 0.15, 0.14, 0.17, 0.20, 0.18, 0.17)
+            ),
             loop=False,
             name="mordida",
         ),
@@ -870,12 +917,15 @@ def _roster_enemy_clips(
     # maior componente apagava prancha, escudo, arpão e partes desconectadas
     # por um único pixel transparente.
     cells = [
-        frame.subsurface(frame.get_bounding_rect(min_alpha=8)).copy()
-        for frame in cells
+        frame.subsurface(frame.get_bounding_rect(min_alpha=8)).copy() for frame in cells
     ]
     # Chefes continuam maiores, porém a diferença é deliberadamente curta.
     # Isso preserva a hierarquia sem cortar cabeça, arma ou pés na pista.
-    target_height = 88 if kind == "crawler" else (140 if kind == "boss" else (132 if kind == "subboss" else 124))
+    target_height = (
+        88
+        if kind == "crawler"
+        else (140 if kind == "boss" else (132 if kind == "subboss" else 124))
+    )
     # Cada quadro recebe a mesma altura corporal. O gesto muda, mas a criatura
     # não troca de escala entre caminhada, ataque, dano e habilidade.
     frames = _normalize_each_actor_height(cells, target_height)
@@ -953,9 +1003,7 @@ def _roster_enemy_clips(
         "common": (0.19, 0.22, 0.18, 0.23),
     }[kind]
     bite_durations = (
-        (0.15, 0.13, 0.16, 0.23)
-        if kind == "runner"
-        else (0.21, 0.16, 0.20, 0.27)
+        (0.15, 0.13, 0.16, 0.23) if kind == "runner" else (0.21, 0.16, 0.20, 0.27)
     )
     skill_durations = (
         (0.24, 0.32, 0.28, 0.26)
@@ -1025,8 +1073,7 @@ def _retro_defender_clips(
     # (pentes, botas ou canos flutuantes) antes de medir a caixa corporal.
     cells = [_sanitize_actor_frame(frame) for frame in cells]
     cells = [
-        frame.subsurface(frame.get_bounding_rect(min_alpha=8)).copy()
-        for frame in cells
+        frame.subsurface(frame.get_bounding_rect(min_alpha=8)).copy() for frame in cells
     ]
     target_height = 78 if kind == "vehicle" else (96 if kind == "support" else 124)
     reference_height = sorted(_main_figure(frame).height for frame in cells[:4])[1]
@@ -1047,16 +1094,29 @@ def _retro_defender_clips(
     shot_scale = 9.0 / max(1.0, shoot_fps)
     reload_scale = SOLDIER_RELOAD_WEIGHT.get(actor, 1.0)
     clips = {
-        "idle": AnimationClip.uniform(groups["idle"], fps=3.0, name="respiração 16-bit"),
-        "move": AnimationClip.uniform(groups["move"], fps=move_fps, name="deslocamento apoiado"),
+        "idle": AnimationClip.uniform(
+            groups["idle"], fps=3.0, name="respiração 16-bit"
+        ),
+        "move": AnimationClip.uniform(
+            groups["move"], fps=move_fps, name="deslocamento apoiado"
+        ),
         "shoot": AnimationClip.timed(
-            groups["shoot"], tuple(value * shot_scale for value in (0.10, 0.10, 0.13, 0.12)), loop=False, name="ação e recuo"
+            groups["shoot"],
+            tuple(value * shot_scale for value in (0.10, 0.10, 0.13, 0.12)),
+            loop=False,
+            name="ação e recuo",
         ),
         "reload": AnimationClip.timed(
-            groups["reload"], tuple(value * reload_scale for value in (0.18, 0.42, 0.48, 0.20)), loop=False, name="recarga visível"
+            groups["reload"],
+            tuple(value * reload_scale for value in (0.18, 0.42, 0.48, 0.20)),
+            loop=False,
+            name="recarga visível",
         ),
         "hit": AnimationClip.timed(
-            groups["hit"], tuple(value * hit_scale for value in (0.08, 0.11, 0.09, 0.07)), loop=False, name="impacto"
+            groups["hit"],
+            tuple(value * hit_scale for value in (0.08, 0.11, 0.09, 0.07)),
+            loop=False,
+            name="impacto",
         ),
     }
     if kind == "support":
@@ -1065,7 +1125,10 @@ def _retro_defender_clips(
             "move": clips["move"],
             "hit": clips["hit"],
             "support": AnimationClip.timed(
-            groups["support"], (0.16, 0.24, 0.36, 0.18), loop=False, name="transmissão"
+                groups["support"],
+                (0.16, 0.24, 0.36, 0.18),
+                loop=False,
+                name="transmissão",
             ),
         }
     return clips
@@ -1108,7 +1171,9 @@ def build_production_clips() -> dict[str, dict[str, AnimationClip]]:
                 # esquerda. Cachoeira: as quatro primeiras para a direita,
                 # as quatro últimas para a esquerda.
                 flip_move_x=actor == "city_runner",
-                flip_move_indices=frozenset(range(4)) if actor == "beach_runner" else frozenset(),
+                flip_move_indices=(
+                    frozenset(range(4)) if actor == "beach_runner" else frozenset()
+                ),
             )
         elif kind == "crawler":
             clips[actor] = _zombie_clips(

@@ -10,9 +10,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 from PIL import Image
-
 from prototipo_carta_campo import Prototype
-
 
 ROOT = Path(__file__).resolve().parent
 

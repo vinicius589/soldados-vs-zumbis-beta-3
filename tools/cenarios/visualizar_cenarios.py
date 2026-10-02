@@ -15,16 +15,27 @@ from pathlib import Path
 import numpy as np
 import pygame
 
-
 WIDTH, HEIGHT = 1280, 720
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "prontos_1280x720"
 AMBIENT_ASSETS = ROOT / "animacao_ambiental"
 PIXEL_ROOT = ROOT.parent / "PIXEL_ART_SPRITES_BETA4" / "frames_sem_chroma"
 SCENES = [
-    ("NOVA YORK — TERMINAL FÉLIX-13", "01_nova_york_terminal_helix_entrada_unica_v4.png", "cidade"),
-    ("EGITO — ESCAVAÇÃO FÉLIX DE KHEPRA", "02_egito_escavacao_helix_piras_apagadas_v5.png", "egito"),
-    ("MINAS GERAIS — CACHOEIRA FÉLIX", "03_minas_cachoeira_helix_entrada_unica_v4.png", "minas"),
+    (
+        "NOVA YORK — TERMINAL FÉLIX-13",
+        "01_nova_york_terminal_helix_entrada_unica_v4.png",
+        "cidade",
+    ),
+    (
+        "EGITO — ESCAVAÇÃO FÉLIX DE KHEPRA",
+        "02_egito_escavacao_helix_piras_apagadas_v5.png",
+        "egito",
+    ),
+    (
+        "MINAS GERAIS — CACHOEIRA FÉLIX",
+        "03_minas_cachoeira_helix_entrada_unica_v4.png",
+        "minas",
+    ),
 ]
 
 LANE_CENTERS = {
@@ -92,7 +103,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def remove_green_chroma(surface: pygame.Surface, *, black_limit: int = 24) -> pygame.Surface:
+def remove_green_chroma(
+    surface: pygame.Surface, *, black_limit: int = 24
+) -> pygame.Surface:
     """Remove apenas o fundo uniforme conectado às bordas.
 
     Além do chroma verde, algumas folhas geradas vieram com preto puro. O
@@ -110,9 +123,7 @@ def remove_green_chroma(surface: pygame.Surface, *, black_limit: int = 24) -> py
         & (green_channel > blue * 1.03 + 6)
     )
     black_candidate = (
-        (red < black_limit)
-        & (green_channel < black_limit)
-        & (blue < black_limit)
+        (red < black_limit) & (green_channel < black_limit) & (blue < black_limit)
     )
     candidate = green_candidate | black_candidate
     candidate_surface = pygame.Surface(clean.get_size(), pygame.SRCALPHA)
@@ -122,9 +133,13 @@ def remove_green_chroma(surface: pygame.Surface, *, black_limit: int = 24) -> py
     candidate_mask = pygame.mask.from_surface(candidate_surface, threshold=1)
     border = pygame.mask.Mask(clean.get_size())
     border.draw(pygame.mask.Mask((clean.get_width(), 2), fill=True), (0, 0))
-    border.draw(pygame.mask.Mask((clean.get_width(), 2), fill=True), (0, clean.get_height() - 2))
+    border.draw(
+        pygame.mask.Mask((clean.get_width(), 2), fill=True), (0, clean.get_height() - 2)
+    )
     border.draw(pygame.mask.Mask((2, clean.get_height()), fill=True), (0, 0))
-    border.draw(pygame.mask.Mask((2, clean.get_height()), fill=True), (clean.get_width() - 2, 0))
+    border.draw(
+        pygame.mask.Mask((2, clean.get_height()), fill=True), (clean.get_width() - 2, 0)
+    )
     background = pygame.mask.Mask(clean.get_size())
     for component in candidate_mask.connected_components(minimum=8):
         if component.overlap(border, (0, 0)) is not None:
@@ -169,12 +184,18 @@ def split_sheet(
 
 
 def load_frames(folder: Path) -> list[pygame.Surface]:
-    return [pygame.image.load(str(path)).convert_alpha() for path in sorted(folder.glob("frame_*.png"))]
+    return [
+        pygame.image.load(str(path)).convert_alpha()
+        for path in sorted(folder.glob("frame_*.png"))
+    ]
 
 
 def fit(surface: pygame.Surface, width: int, height: int) -> pygame.Surface:
     factor = min(width / surface.get_width(), height / surface.get_height())
-    size = (max(1, round(surface.get_width() * factor)), max(1, round(surface.get_height() * factor)))
+    size = (
+        max(1, round(surface.get_width() * factor)),
+        max(1, round(surface.get_height() * factor)),
+    )
     return pygame.transform.smoothscale(surface, size)
 
 
@@ -229,7 +250,9 @@ def alpha_base_point(surface: pygame.Surface, min_alpha: int = 10) -> tuple[int,
     return base_x, bounds.bottom
 
 
-def normalize_sequence(frames: list[pygame.Surface], padding: int = 3) -> list[pygame.Surface]:
+def normalize_sequence(
+    frames: list[pygame.Surface], padding: int = 3
+) -> list[pygame.Surface]:
     """Usa o mesmo recorte em toda a sequência para impedir saltos do pivô."""
     bounds = [frame.get_bounding_rect(min_alpha=10) for frame in frames]
     union = bounds[0].unionall(bounds[1:])
@@ -313,7 +336,9 @@ class ScenarioGallery:
         self.selected_lane = 0
         self.notice = ""
         self.notice_timer = 0.0
-        self.images = [pygame.image.load(str(ASSETS / file)).convert() for _, file, _ in SCENES]
+        self.images = [
+            pygame.image.load(str(ASSETS / file)).convert() for _, file, _ in SCENES
+        ]
         general_sheet = split_sheet(
             AMBIENT_ASSETS / "general_saudacao_3x8_v1.png",
             8,
@@ -363,7 +388,12 @@ class ScenarioGallery:
         self.dust_textures = [make_dust_texture(1200 + index) for index in range(5)]
         rng = random.Random(731)
         self.pixels = [
-            AmbientPixel(rng.randrange(WIDTH), rng.randrange(HEIGHT), rng.uniform(22, 70), rng.random() * math.tau)
+            AmbientPixel(
+                rng.randrange(WIDTH),
+                rng.randrange(HEIGHT),
+                rng.uniform(22, 70),
+                rng.random() * math.tau,
+            )
             for _ in range(90)
         ]
 
@@ -434,7 +464,9 @@ class ScenarioGallery:
         outline = pygame.transform.scale(outline, size)
         center = (officer_rect.right + 22, officer_rect.top + 18)
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-1, -1), (1, 1)):
-            self.screen.blit(outline, outline.get_rect(center=(center[0] + dx, center[1] + dy)))
+            self.screen.blit(
+                outline, outline.get_rect(center=(center[0] + dx, center[1] + dy))
+            )
         self.screen.blit(fill, fill.get_rect(center=center))
 
     def draw_commander(self) -> None:
@@ -470,10 +502,22 @@ class ScenarioGallery:
         wash.fill((20, 42, 50, 34))
         overlay.blit(wash, (0, 0))
         for i, pixel in enumerate(self.pixels):
-            x = int((pixel.x * 1.9 - self.elapsed * (230 + i % 7 * 13)) % (WIDTH + 80)) - 40
-            y = int((pixel.y * 2.3 + self.elapsed * (410 + i % 9 * 17)) % (HEIGHT + 70)) - 35
+            x = (
+                int((pixel.x * 1.9 - self.elapsed * (230 + i % 7 * 13)) % (WIDTH + 80))
+                - 40
+            )
+            y = (
+                int((pixel.y * 2.3 + self.elapsed * (410 + i % 9 * 17)) % (HEIGHT + 70))
+                - 35
+            )
             length = 9 + i % 8
-            pygame.draw.line(overlay, (168, 222, 221, 95 + i % 3 * 25), (x, y), (x - 4, y + length), 1)
+            pygame.draw.line(
+                overlay,
+                (168, 222, 221, 95 + i % 3 * 25),
+                (x, y),
+                (x - 4, y + length),
+                1,
+            )
         splash_frame = self.splash[int(self.elapsed * 8) % len(self.splash)]
         for i, lane_y in enumerate(LANE_CENTERS["cidade"]):
             x = 260 + int((self.elapsed * (95 + i * 17) + i * 211) % 820)
@@ -504,8 +548,12 @@ class ScenarioGallery:
             arrival = 1.0 - self.boss_timer / 3.2
             pulse = 0.5 + 0.5 * math.sin(arrival * math.pi * 8.0)
             for index in range(4):
-                fog = boost_alpha(self.fog_textures[(index + 1) % len(self.fog_textures)], 2.6)
-                fog = pygame.transform.smoothscale(fog, (132 - index * 10, 72 - index * 5))
+                fog = boost_alpha(
+                    self.fog_textures[(index + 1) % len(self.fog_textures)], 2.6
+                )
+                fog = pygame.transform.smoothscale(
+                    fog, (132 - index * 10, 72 - index * 5)
+                )
                 fog.fill((127, 255, 112, 220), special_flags=pygame.BLEND_RGBA_MULT)
                 fog.set_alpha(64 + int(pulse * 42) - index * 6)
                 x = 1128 + index * 30 + int(8 * math.sin(self.elapsed * 1.1 + index))
@@ -530,7 +578,9 @@ class ScenarioGallery:
         width = round(54 + (84 - 54) * growth)
         height = round(84 + (132 - 84) * growth)
         alpha = round(220 + (244 - 220) * growth)
-        for offset, (anchor, depth_scale) in enumerate(zip(DESERT_BRAZIER_ANCHORS, perspective)):
+        for offset, (anchor, depth_scale) in enumerate(
+            zip(DESERT_BRAZIER_ANCHORS, perspective)
+        ):
             source = self.egypt_brazier_flame[(base_index + offset * 3) % 8]
             # Ambas crescem a partir da taça durante a chegada do chefe.
             flame = fit(source, round(width * depth_scale), round(height * depth_scale))
@@ -595,7 +645,9 @@ class ScenarioGallery:
                 self.screen.blit(frame, drone_rect)
             if drone_rect.right < end_x and int(t * 12) % 3 == 1:
                 flash = fit(self.muzzle[int(t * 18) % len(self.muzzle)], 46, 34)
-                flash_rect = flash.get_rect(midleft=(drone_rect.right - 8, drone_rect.centery))
+                flash_rect = flash.get_rect(
+                    midleft=(drone_rect.right - 8, drone_rect.centery)
+                )
                 if flash_rect.right <= end_x:
                     self.screen.blit(flash, flash_rect)
         else:
@@ -627,7 +679,9 @@ class ScenarioGallery:
         """Mostra cada defesa dentro do começo real de sua própria linha."""
         lanes = LANE_CENTERS[self.kind]
         if self.kind == "cidade":
-            station = fit(self.tractor[int(self.elapsed * 6) % len(self.tractor)], 67, 52)
+            station = fit(
+                self.tractor[int(self.elapsed * 6) % len(self.tractor)], 67, 52
+            )
             for lane, lane_y in enumerate(lanes):
                 if self.defense_timer >= 0.0 and lane == self.selected_lane:
                     continue
@@ -675,7 +729,11 @@ class ScenarioGallery:
         top.fill((5, 10, 16, 218))
         self.screen.blit(top, (0, 0))
         self.screen.blit(self.font.render(title, True, (245, 247, 235)), (22, 8))
-        action = {"cidade": "TRATOR", "egito": "DRONE DE ATAQUE", "minas": "DEFESA DA LINHA"}[self.kind]
+        action = {
+            "cidade": "TRATOR",
+            "egito": "DRONE DE ATAQUE",
+            "minas": "DEFESA DA LINHA",
+        }[self.kind]
         hint = (
             f"← → cenário   |   1–4 linha ({self.selected_lane + 1})   |   "
             f"C {action}   |   H horda   |   B chefe/derrotar   |   ESC sair"

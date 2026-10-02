@@ -10,12 +10,13 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 from PIL import Image
-
 from visualizar_cenarios import ScenarioGallery
 
 
 def main() -> int:
-    destination = Path(__file__).resolve().parent / "qa" / "animacao_deserto_tempestade.gif"
+    destination = (
+        Path(__file__).resolve().parent / "qa" / "animacao_deserto_tempestade.gif"
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     gallery = ScenarioGallery(headless=True, scene=2)
     frames: list[Image.Image] = []

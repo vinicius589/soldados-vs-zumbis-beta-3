@@ -39,25 +39,55 @@ class WeaponVisualProfile:
 # Identidade por personagem, e não um molde copiado da SWAT. O alinhamento é
 # comum (sempre na boca do cano); tamanho, recuo e gesto continuam específicos.
 DEFENDER_WEAPON_PROFILES: dict[str, WeaponVisualProfile] = {
-    "xerife_rua": WeaponVisualProfile("pistol_50ae", (13.0, 8.0), 5.0, "pistol_magazine"),
-    "pistoleiro_deserto": WeaponVisualProfile("revolver_357", (12.0, 7.0), 5.5, "revolver_cylinder"),
+    "xerife_rua": WeaponVisualProfile(
+        "pistol_50ae", (13.0, 8.0), 5.0, "pistol_magazine"
+    ),
+    "pistoleiro_deserto": WeaponVisualProfile(
+        "revolver_357", (12.0, 7.0), 5.5, "revolver_cylinder"
+    ),
     "marinheiro": WeaponVisualProfile("pistol_9mm", (9.0, 6.0), 3.0, "pistol_magazine"),
     "agente_swat": WeaponVisualProfile("smg_9mm", (10.0, 6.0), 2.0, "smg_magazine"),
-    "fuzileiro_deserto": WeaponVisualProfile("rifle_556_scar", (12.0, 7.0), 3.2, "rifle_magazine"),
-    "fuzileiro_marinha": WeaponVisualProfile("rifle_556_m16", (13.0, 7.0), 3.0, "rifle_magazine"),
-    "atirador_precisao_swat": WeaponVisualProfile("sniper_awm", (14.0, 8.0), 5.0, "bolt_action"),
-    "atirador_horizonte": WeaponVisualProfile("sniper_762", (13.0, 7.0), 4.2, "rifle_magazine"),
-    "atirador_precisao_marinha": WeaponVisualProfile("sniper_338", (15.0, 9.0), 5.8, "bolt_action"),
-    "agente_entrada": WeaponVisualProfile("buckshot_12g", (18.0, 11.0), 7.0, "shotgun_shells"),
+    "fuzileiro_deserto": WeaponVisualProfile(
+        "rifle_556_scar", (12.0, 7.0), 3.2, "rifle_magazine"
+    ),
+    "fuzileiro_marinha": WeaponVisualProfile(
+        "rifle_556_m16", (13.0, 7.0), 3.0, "rifle_magazine"
+    ),
+    "atirador_precisao_swat": WeaponVisualProfile(
+        "sniper_awm", (14.0, 8.0), 5.0, "bolt_action"
+    ),
+    "atirador_horizonte": WeaponVisualProfile(
+        "sniper_762", (13.0, 7.0), 4.2, "rifle_magazine"
+    ),
+    "atirador_precisao_marinha": WeaponVisualProfile(
+        "sniper_338", (15.0, 9.0), 5.8, "bolt_action"
+    ),
+    "agente_entrada": WeaponVisualProfile(
+        "buckshot_12g", (18.0, 11.0), 7.0, "shotgun_shells"
+    ),
     "tenente_artilheiro": WeaponVisualProfile("mg_762", (15.0, 8.0), 4.0, "belt_box"),
-    "especialista_antipraga": WeaponVisualProfile("gas_grenade", (7.0, 5.0), 3.5, "grenade_drum"),
-    "lancador_foguetes": WeaponVisualProfile("rpg7_rocket", (5.0, 4.0), 8.0, "rocket_round"),
-    "nomade_morteiro": WeaponVisualProfile("mortar_shell", (4.0, 4.0), 5.0, "mortar_shell"),
-    "granadeiro_profundidades": WeaponVisualProfile("grenade_40mm", (7.0, 5.0), 4.0, "grenade_drum"),
-    "barco_patrulha": WeaponVisualProfile("naval_round", (14.0, 8.0), 3.5, "box_magazine"),
-    "submarino_tatico": WeaponVisualProfile("compact_torpedo", (3.0, 3.0), 2.0, "torpedo_tube"),
+    "especialista_antipraga": WeaponVisualProfile(
+        "gas_grenade", (7.0, 5.0), 3.5, "grenade_drum"
+    ),
+    "lancador_foguetes": WeaponVisualProfile(
+        "rpg7_rocket", (5.0, 4.0), 8.0, "rocket_round"
+    ),
+    "nomade_morteiro": WeaponVisualProfile(
+        "mortar_shell", (4.0, 4.0), 5.0, "mortar_shell"
+    ),
+    "granadeiro_profundidades": WeaponVisualProfile(
+        "grenade_40mm", (7.0, 5.0), 4.0, "grenade_drum"
+    ),
+    "barco_patrulha": WeaponVisualProfile(
+        "naval_round", (14.0, 8.0), 3.5, "box_magazine"
+    ),
+    "submarino_tatico": WeaponVisualProfile(
+        "compact_torpedo", (3.0, 3.0), 2.0, "torpedo_tube"
+    ),
     "incinerador_deserto": WeaponVisualProfile("flame", (0.0, 0.0), 1.0, "fuel_tank"),
-    "bombeiro_hidraulico": WeaponVisualProfile("waterjet", (0.0, 0.0), 1.4, "water_tank"),
+    "bombeiro_hidraulico": WeaponVisualProfile(
+        "waterjet", (0.0, 0.0), 1.4, "water_tank"
+    ),
 }
 
 
@@ -93,7 +123,16 @@ DEFENDER_LAYOUTS: dict[str, ActorLayout] = {
         # Medido no último pixel opaco do bocal em cada um dos oito quadros.
         # O ciclo antigo estava cerca de 17 px abaixo do cano: horizontalmente
         # parecia próximo, mas a água começava no vazio diante do personagem.
-        ((17, 72), (17, 72), (17, 73), (17, 72), (17, 72), (17, 72), (17, 72), (17, 73)),
+        (
+            (17, 72),
+            (17, 72),
+            (17, 73),
+            (17, 72),
+            (17, 72),
+            (17, 72),
+            (17, 72),
+            (17, 73),
+        ),
     ),
     "beach_grenadier": ActorLayout(104, 130, 40, 55),
     "beach_bomber": ActorLayout(104, 130),

@@ -23,7 +23,6 @@ from typing import Final
 
 import pygame
 
-
 Number = int | float
 Point = tuple[Number, Number] | pygame.Vector2
 Color = tuple[int, int, int] | tuple[int, int, int, int]
@@ -79,7 +78,7 @@ class SpriteSheet:
         self.surface = surface
 
     @classmethod
-    def from_file(cls, path: str | Path, *, convert_alpha: bool = True) -> "SpriteSheet":
+    def from_file(cls, path: str | Path, *, convert_alpha: bool = True) -> SpriteSheet:
         """Carrega uma folha do disco sem exigir um formato de grade específico."""
         image = pygame.image.load(str(Path(path)))
         if convert_alpha and pygame.display.get_surface() is not None:
@@ -128,7 +127,9 @@ class SpriteSheet:
                 y = margin_y + row * (frame_h + spacing_y)
                 rect = pygame.Rect(x, y, frame_w, frame_h)
                 if not self.surface.get_rect().contains(rect):
-                    raise ValueError(f"quadro {column},{row} ultrapassa a folha: {rect}")
+                    raise ValueError(
+                        f"quadro {column},{row} ultrapassa a folha: {rect}"
+                    )
                 frame = self.surface.subsurface(rect).copy()
                 if scale is not None:
                     if scale[0] <= 0 or scale[1] <= 0:
@@ -186,7 +187,9 @@ class SpriteSheet:
             for column in range(columns):
                 left = column * width // columns
                 right = (column + 1) * width // columns
-                frame = self.surface.subsurface((left, top, right - left, bottom - top)).copy()
+                frame = self.surface.subsurface(
+                    (left, top, right - left, bottom - top)
+                ).copy()
                 if scale is not None:
                     frame = pygame.transform.smoothscale(frame, scale)
                 frames.append(frame)
@@ -207,7 +210,9 @@ class AnimationClip:
             raise ValueError("AnimationClip precisa de pelo menos um quadro")
         if len(self.frames) != len(self.frame_durations):
             raise ValueError("cada quadro precisa de exatamente uma duração")
-        if any(not math.isfinite(value) or value <= 0 for value in self.frame_durations):
+        if any(
+            not math.isfinite(value) or value <= 0 for value in self.frame_durations
+        ):
             raise ValueError("as durações dos quadros devem ser finitas e positivas")
 
     @classmethod
@@ -218,7 +223,7 @@ class AnimationClip:
         fps: float,
         loop: bool = True,
         name: str = "",
-    ) -> "AnimationClip":
+    ) -> AnimationClip:
         """Cria um clipe com velocidade uniforme expressa em quadros/segundo."""
         fps = float(fps)
         if not math.isfinite(fps) or fps <= 0:
@@ -234,9 +239,11 @@ class AnimationClip:
         *,
         loop: bool = True,
         name: str = "",
-    ) -> "AnimationClip":
+    ) -> AnimationClip:
         """Cria um clipe com timing desenhado quadro a quadro."""
-        return cls(tuple(frames), tuple(float(value) for value in durations), loop, name)
+        return cls(
+            tuple(frames), tuple(float(value) for value in durations), loop, name
+        )
 
     @property
     def duration(self) -> float:
@@ -326,7 +333,9 @@ class AnimationManager:
             raise RuntimeError("não há animação ativa")
         index = int(frame_index)
         if not 0 <= index < len(self.clip.frames):
-            raise IndexError(f"quadro {index} fora do intervalo 0..{len(self.clip.frames) - 1}")
+            raise IndexError(
+                f"quadro {index} fora do intervalo 0..{len(self.clip.frames) - 1}"
+            )
         self.frame_index = index
         self.frame_elapsed = 0.0
         self.finished = not self.clip.loop and index == len(self.clip.frames) - 1
@@ -398,7 +407,17 @@ class Entity(pygame.sprite.Sprite):
     """Entidade visual genérica controlada por uma máquina de estados."""
 
     VALID_ANCHORS: Final = frozenset(
-        {"topleft", "topright", "bottomleft", "bottomright", "center", "midtop", "midbottom", "midleft", "midright"}
+        {
+            "topleft",
+            "topright",
+            "bottomleft",
+            "bottomright",
+            "center",
+            "midtop",
+            "midbottom",
+            "midleft",
+            "midright",
+        }
     )
 
     def __init__(
@@ -472,7 +491,9 @@ class Entity(pygame.sprite.Sprite):
             image = pygame.transform.rotozoom(image, self.angle, self.scale)
         if self.flash_active:
             falloff = self._flash_remaining / max(0.0001, self._flash_duration)
-            image = apply_color_overlay(image, self._flash_color, self._flash_strength * falloff)
+            image = apply_color_overlay(
+                image, self._flash_color, self._flash_strength * falloff
+            )
         return image
 
     def update(self, dt: float) -> None:
@@ -485,11 +506,15 @@ class Entity(pygame.sprite.Sprite):
         if self.auto_kill_state == self.state and self.animation.finished:
             self.kill()
 
-    def draw(self, target: pygame.Surface, camera: "Camera2D | None" = None) -> pygame.Rect | None:
+    def draw(
+        self, target: pygame.Surface, camera: Camera2D | None = None
+    ) -> pygame.Rect | None:
         """Desenha a entidade respeitando âncora e deslocamento da câmera."""
         if not self.visible:
             return None
-        position = self.position if camera is None else camera.world_to_screen(self.position)
+        position = (
+            self.position if camera is None else camera.world_to_screen(self.position)
+        )
         rect = self.image.get_rect()
         setattr(rect, self.anchor, (round(position.x), round(position.y)))
         target.blit(self.image, rect)
@@ -525,16 +550,25 @@ class Camera2D:
         duration = float(duration)
         frequency = float(frequency)
         if amplitude < 0 or duration <= 0 or frequency <= 0:
-            raise ValueError("amplitude >= 0, duration > 0 e frequency > 0 são obrigatórios")
+            raise ValueError(
+                "amplitude >= 0, duration > 0 e frequency > 0 são obrigatórios"
+            )
         if not all(math.isfinite(value) for value in (amplitude, duration, frequency)):
             raise ValueError("parâmetros de shake devem ser finitos")
 
         if additive and self.shaking:
             self._shake_amplitude += amplitude
-            self._shake_duration = max(self._shake_duration, self._shake_elapsed + duration)
+            self._shake_duration = max(
+                self._shake_duration, self._shake_elapsed + duration
+            )
         else:
-            self._shake_amplitude = max(amplitude, self._shake_amplitude if self.shaking else 0.0)
-            self._shake_duration = max(duration, self._shake_duration - self._shake_elapsed if self.shaking else 0.0)
+            self._shake_amplitude = max(
+                amplitude, self._shake_amplitude if self.shaking else 0.0
+            )
+            self._shake_duration = max(
+                duration,
+                self._shake_duration - self._shake_elapsed if self.shaking else 0.0,
+            )
             self._shake_elapsed = 0.0
         self._shake_frequency = frequency
         self._shake_seed = (self._shake_seed + 1.61803398875) % math.tau
@@ -548,8 +582,15 @@ class Camera2D:
         progress = self._shake_elapsed / self._shake_duration
         envelope = (1.0 - progress) ** 2
         phase = self._shake_elapsed * self._shake_frequency * math.tau
-        self.shake_offset.x = math.sin(phase * 1.07 + self._shake_seed) * self._shake_amplitude * envelope
-        self.shake_offset.y = math.sin(phase * 1.31 + self._shake_seed * 1.7) * self._shake_amplitude * 0.72 * envelope
+        self.shake_offset.x = (
+            math.sin(phase * 1.07 + self._shake_seed) * self._shake_amplitude * envelope
+        )
+        self.shake_offset.y = (
+            math.sin(phase * 1.31 + self._shake_seed * 1.7)
+            * self._shake_amplitude
+            * 0.72
+            * envelope
+        )
         if not self.shaking:
             self.shake_offset.update(0, 0)
 
@@ -566,7 +607,9 @@ class Camera2D:
     ) -> None:
         """Aplica o tremor a uma cena pronta, inclusive HUD quando desejado."""
         destination.fill(clear_color)
-        destination.blit(source, (round(self.shake_offset.x), round(self.shake_offset.y)))
+        destination.blit(
+            source, (round(self.shake_offset.x), round(self.shake_offset.y))
+        )
 
 
 class OneShotVFX(pygame.sprite.Sprite):
@@ -604,12 +647,18 @@ class OneShotVFX(pygame.sprite.Sprite):
         self.animation.update(dt)
         self.image = self.animation.frame
         self.rect = self.image.get_rect()
-        setattr(self.rect, self.anchor, (round(self.position.x), round(self.position.y)))
+        setattr(
+            self.rect, self.anchor, (round(self.position.x), round(self.position.y))
+        )
         if self.animation.finished:
             self.kill()
 
-    def draw(self, target: pygame.Surface, camera: Camera2D | None = None) -> pygame.Rect:
-        position = self.position if camera is None else camera.world_to_screen(self.position)
+    def draw(
+        self, target: pygame.Surface, camera: Camera2D | None = None
+    ) -> pygame.Rect:
+        position = (
+            self.position if camera is None else camera.world_to_screen(self.position)
+        )
         rect = self.image.get_rect()
         setattr(rect, self.anchor, (round(position.x), round(position.y)))
         target.blit(self.image, rect)
@@ -672,7 +721,9 @@ class Particle:
         if self.age >= self.lifetime:
             self.alive = False
 
-    def draw(self, target: pygame.Surface, camera: Camera2D | None = None) -> pygame.Rect | None:
+    def draw(
+        self, target: pygame.Surface, camera: Camera2D | None = None
+    ) -> pygame.Rect | None:
         if not self.alive:
             return None
         t = self.progress
@@ -680,7 +731,9 @@ class Particle:
         alpha = round(self.start_alpha + (self.end_alpha - self.start_alpha) * t)
         image = pygame.transform.rotozoom(self.source, self.angle, scale)
         image.set_alpha(alpha)
-        position = self.position if camera is None else camera.world_to_screen(self.position)
+        position = (
+            self.position if camera is None else camera.world_to_screen(self.position)
+        )
         rect = image.get_rect()
         setattr(rect, self.anchor, (round(position.x), round(position.y)))
         target.blit(image, rect)
@@ -730,7 +783,9 @@ class VFXManager:
         self.particles.clear()
 
 
-def _demo_actor_frames(color: tuple[int, int, int], count: int, action: str) -> list[pygame.Surface]:
+def _demo_actor_frames(
+    color: tuple[int, int, int], count: int, action: str
+) -> list[pygame.Surface]:
     """Gera quadros simples apenas para a demonstração sem ativos externos."""
     frames: list[pygame.Surface] = []
     for index in range(count):
@@ -741,12 +796,38 @@ def _demo_actor_frames(color: tuple[int, int, int], count: int, action: str) -> 
         fade = 1.0 - phase if action == "destroy" else 1.0
         body = pygame.Rect(30 + lean, 34 + bob, 36, 46)
         pygame.draw.rect(frame, (*color, round(255 * fade)), body, border_radius=8)
-        pygame.draw.circle(frame, (225, 207, 181, round(255 * fade)), (48 + lean, 23 + bob), 13)
+        pygame.draw.circle(
+            frame, (225, 207, 181, round(255 * fade)), (48 + lean, 23 + bob), 13
+        )
         stride = round(math.sin(phase * math.tau) * 11) if action == "move" else 0
-        pygame.draw.line(frame, (*color, round(255 * fade)), (42 + lean, 78 + bob), (38 - stride, 106), 8)
-        pygame.draw.line(frame, (*color, round(255 * fade)), (56 + lean, 78 + bob), (60 + stride, 106), 8)
-        pygame.draw.line(frame, (*color, round(255 * fade)), (34 + lean, 49 + bob), (17 + lean, 64 - stride // 3), 7)
-        pygame.draw.line(frame, (*color, round(255 * fade)), (62 + lean, 49 + bob), (82 + lean, 58 + stride // 3), 7)
+        pygame.draw.line(
+            frame,
+            (*color, round(255 * fade)),
+            (42 + lean, 78 + bob),
+            (38 - stride, 106),
+            8,
+        )
+        pygame.draw.line(
+            frame,
+            (*color, round(255 * fade)),
+            (56 + lean, 78 + bob),
+            (60 + stride, 106),
+            8,
+        )
+        pygame.draw.line(
+            frame,
+            (*color, round(255 * fade)),
+            (34 + lean, 49 + bob),
+            (17 + lean, 64 - stride // 3),
+            7,
+        )
+        pygame.draw.line(
+            frame,
+            (*color, round(255 * fade)),
+            (62 + lean, 49 + bob),
+            (82 + lean, 58 + stride // 3),
+            7,
+        )
         frames.append(frame)
     return frames
 
@@ -757,7 +838,9 @@ def _demo_vfx_frames() -> list[pygame.Surface]:
         frame = pygame.Surface((96, 96), pygame.SRCALPHA)
         radius = 8 + index * 7
         alpha = max(0, 230 - index * 36)
-        pygame.draw.circle(frame, (255, 202, 90, alpha), (48, 48), radius, max(2, 9 - index))
+        pygame.draw.circle(
+            frame, (255, 202, 90, alpha), (48, 48), radius, max(2, 9 - index)
+        )
         frames.append(frame)
     return frames
 
@@ -775,12 +858,22 @@ def run_demo() -> None:
     font = pygame.font.SysFont("consolas", 18)
 
     animations = {
-        "idle": AnimationClip.uniform(_demo_actor_frames((70, 145, 220), 4, "idle"), fps=5),
-        "move": AnimationClip.uniform(_demo_actor_frames((70, 145, 220), 8, "move"), fps=12),
-        "action": AnimationClip.uniform(_demo_actor_frames((238, 169, 62), 6, "action"), fps=14, loop=False),
-        "destroy": AnimationClip.uniform(_demo_actor_frames((180, 65, 65), 7, "destroy"), fps=11, loop=False),
+        "idle": AnimationClip.uniform(
+            _demo_actor_frames((70, 145, 220), 4, "idle"), fps=5
+        ),
+        "move": AnimationClip.uniform(
+            _demo_actor_frames((70, 145, 220), 8, "move"), fps=12
+        ),
+        "action": AnimationClip.uniform(
+            _demo_actor_frames((238, 169, 62), 6, "action"), fps=14, loop=False
+        ),
+        "destroy": AnimationClip.uniform(
+            _demo_actor_frames((180, 65, 65), 7, "destroy"), fps=11, loop=False
+        ),
     }
-    vfx_clip = AnimationClip.uniform(_demo_vfx_frames(), fps=18, loop=False, name="impact")
+    vfx_clip = AnimationClip.uniform(
+        _demo_vfx_frames(), fps=18, loop=False, name="impact"
+    )
     particle_image = pygame.Surface((8, 8), pygame.SRCALPHA)
     pygame.draw.polygon(particle_image, (255, 214, 112), ((4, 0), (8, 8), (0, 8)))
 

@@ -10,7 +10,6 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 
-
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "prontos_1280x720"
 SIZE = (1280, 720)

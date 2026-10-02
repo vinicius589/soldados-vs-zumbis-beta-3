@@ -11,8 +11,6 @@ import numpy as np
 import pygame
 
 from src.engine.animation2d import SpriteSheet
-
-
 from src.engine.asset_paths import game_root
 
 ROOT = game_root()
@@ -64,10 +62,15 @@ def _fit_actor(source: pygame.Surface, body_height: int) -> pygame.Surface:
 
 
 def _frames(folder: Path) -> list[pygame.Surface]:
-    return [pygame.image.load(str(path)).convert_alpha() for path in sorted(folder.glob("frame_*.png"))]
+    return [
+        pygame.image.load(str(path)).convert_alpha()
+        for path in sorted(folder.glob("frame_*.png"))
+    ]
 
 
-def _normalize_sequence(frames: list[pygame.Surface], padding: int = 3) -> list[pygame.Surface]:
+def _normalize_sequence(
+    frames: list[pygame.Surface], padding: int = 3
+) -> list[pygame.Surface]:
     """Mantém a mesma caixa em todos os quadros para o corpo não pulsar."""
     bounds = [frame.get_bounding_rect(min_alpha=8) for frame in frames]
     union = bounds[0].unionall(bounds[1:])
@@ -98,7 +101,9 @@ class ScenarioRuntime:
     """Estado visual por ``dt`` compartilhado com a partida real."""
 
     def __init__(self) -> None:
-        general_cells = SpriteSheet.from_file(AMBIENT / "general_saudacao_3x8_v1.png").slice_equal(8, 3)
+        general_cells = SpriteSheet.from_file(
+            AMBIENT / "general_saudacao_3x8_v1.png"
+        ).slice_equal(8, 3)
         self.generals = [
             _normalize_sequence(general_cells[row * 8 : (row + 1) * 8])
             for row in range(3)
@@ -114,15 +119,21 @@ class ScenarioRuntime:
         self.whistle_font = pygame.font.Font(None, 28)
         self.brazier = [
             _trim(frame)
-            for frame in SpriteSheet.from_file(AMBIENT / "pira_toxica_verde_1x8_v1.png").slice_equal(8, 1)
+            for frame in SpriteSheet.from_file(
+                AMBIENT / "pira_toxica_verde_1x8_v1.png"
+            ).slice_equal(8, 1)
         ]
         self.aquatic_mine = [
             _trim(frame)
-            for frame in SpriteSheet.from_file(AMBIENT / "mina_aquatica_v2_1x8.png").slice_equal(8, 1)
+            for frame in SpriteSheet.from_file(
+                AMBIENT / "mina_aquatica_v2_1x8.png"
+            ).slice_equal(8, 1)
         ]
         self.land_charge = [
             _trim(frame)
-            for frame in SpriteSheet.from_file(AMBIENT / "carga_terrestre_minas_v2_1x8.png").slice_equal(8, 1)
+            for frame in SpriteSheet.from_file(
+                AMBIENT / "carga_terrestre_minas_v2_1x8.png"
+            ).slice_equal(8, 1)
         ]
         self.tractor = _frames(PIXEL / "veiculos" / "trator_esteiras")
         self.drone = _frames(PIXEL / "veiculos" / "drone_helices")
@@ -135,7 +146,12 @@ class ScenarioRuntime:
         self._last_storm_cycle = -1
         rng = random.Random(731)
         self.rain = [
-            (rng.randrange(1280), rng.randrange(720), rng.randrange(380, 560), rng.randrange(8, 17))
+            (
+                rng.randrange(1280),
+                rng.randrange(720),
+                rng.randrange(380, 560),
+                rng.randrange(8, 17),
+            )
             for _ in range(90)
         ]
 
@@ -186,9 +202,14 @@ class ScenarioRuntime:
 
     @staticmethod
     def _boss_active(battle: Any) -> bool:
-        return any(getattr(enemy, "is_boss", False) and enemy.hp > 0 for enemy in battle.enemies)
+        return any(
+            getattr(enemy, "is_boss", False) and enemy.hp > 0
+            for enemy in battle.enemies
+        )
 
-    def _draw_whistle_sfx(self, screen: pygame.Surface, officer_rect: pygame.Rect) -> None:
+    def _draw_whistle_sfx(
+        self, screen: pygame.Surface, officer_rect: pygame.Rect
+    ) -> None:
         """Onomatopeia curta, sincronizada somente com o apito na boca."""
         pulse = 1.0 + 0.05 * math.sin(self.elapsed * 18.0)
         fill = self.whistle_font.render("FIIIU!", True, (255, 222, 82))
@@ -199,7 +220,9 @@ class ScenarioRuntime:
             outline = pygame.transform.scale(outline, size)
         center = (officer_rect.right + 22, officer_rect.top + 18)
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-1, -1), (1, 1)):
-            screen.blit(outline, outline.get_rect(center=(center[0] + dx, center[1] + dy)))
+            screen.blit(
+                outline, outline.get_rect(center=(center[0] + dx, center[1] + dy))
+            )
         screen.blit(fill, fill.get_rect(center=center))
 
     def _draw_alarm_sfx(self, screen: pygame.Surface, actor_rect: pygame.Rect) -> None:
@@ -212,7 +235,9 @@ class ScenarioRuntime:
         outline = pygame.transform.scale(outline, size)
         center = (actor_rect.right + 34, actor_rect.top + 37)
         for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
-            screen.blit(outline, outline.get_rect(center=(center[0] + dx, center[1] + dy)))
+            screen.blit(
+                outline, outline.get_rect(center=(center[0] + dx, center[1] + dy))
+            )
         screen.blit(fill, fill.get_rect(center=center))
 
     def _draw_commander(self, screen: pygame.Surface, region: str) -> None:
@@ -248,9 +273,14 @@ class ScenarioRuntime:
         veil.fill((20, 42, 50, 34))
         screen.blit(veil, (0, 0))
         for index, (start_x, start_y, speed, length) in enumerate(self.rain):
-            x = int((start_x - self.elapsed * (speed * 0.33 + index % 7 * 9)) % 1360) - 40
+            x = (
+                int((start_x - self.elapsed * (speed * 0.33 + index % 7 * 9)) % 1360)
+                - 40
+            )
             y = int((start_y + self.elapsed * speed) % 790) - 35
-            pygame.draw.line(screen, (168, 222, 221, 115), (x, y), (x - 4, y + length), 1)
+            pygame.draw.line(
+                screen, (168, 222, 221, 115), (x, y), (x - 4, y + length), 1
+            )
 
     def _draw_desert(self, screen: pygame.Surface, boss_active: bool) -> None:
         glow = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
@@ -266,8 +296,14 @@ class ScenarioRuntime:
         depth_scales = (1.0, 1.0)
         width = round(54 + 30 * growth)
         height = round(84 + 48 * growth)
-        for offset, (anchor, depth) in enumerate(zip(DESERT_BRAZIER_ANCHORS, depth_scales)):
-            flame = _fit(self.brazier[(frame_index + offset * 3) % 8], round(width * depth), round(height * depth))
+        for offset, (anchor, depth) in enumerate(
+            zip(DESERT_BRAZIER_ANCHORS, depth_scales)
+        ):
+            flame = _fit(
+                self.brazier[(frame_index + offset * 3) % 8],
+                round(width * depth),
+                round(height * depth),
+            )
             flame.set_alpha(round(220 + 24 * growth))
             base_x, base_y = _base_point(flame)
             screen.blit(flame, (anchor[0] - base_x, anchor[1] - base_y))
@@ -277,7 +313,9 @@ class ScenarioRuntime:
             for index in range(9):
                 x = 90 + int(math.sin(self.elapsed * 0.8 + index) * 34)
                 y = 330 - index * 34 - int((self.elapsed * 18 + index * 13) % 42)
-                pygame.draw.ellipse(fog, (91, 205, 79, 22 + index * 2), (x - 55, y - 30, 110, 72))
+                pygame.draw.ellipse(
+                    fog, (91, 205, 79, 22 + index * 2), (x - 55, y - 30, 110, 72)
+                )
             screen.blit(fog, (1085, 110))
 
     def _draw_beach_boss_storm(self, screen: pygame.Surface) -> None:
@@ -304,7 +342,11 @@ class ScenarioRuntime:
         self, region: str, row: int, *, moving: bool, water: bool
     ) -> tuple[pygame.Surface, tuple[int, int]]:
         if region == "city":
-            frames, size, fps = self.tractor, (67, 52) if not moving else (116, 92), 10.0
+            frames, size, fps = (
+                self.tractor,
+                (67, 52) if not moving else (116, 92),
+                10.0,
+            )
         elif region == "desert":
             frames, size, fps = self.drone, (62, 46) if not moving else (104, 78), 12.0
         else:

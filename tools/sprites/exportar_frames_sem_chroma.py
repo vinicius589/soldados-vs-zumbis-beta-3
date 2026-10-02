@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
-
 from laboratorio_animacoes import (
     CLEAN_FRAMES_ROOT,
     EXCLUDED_SHEET_KEYS,
@@ -46,7 +44,6 @@ def main() -> int:
     pygame.quit()
     print(f"OK: {exported} quadros transparentes exportados em {CLEAN_FRAMES_ROOT}.")
     return 0
-
 
 
 if __name__ == "__main__":

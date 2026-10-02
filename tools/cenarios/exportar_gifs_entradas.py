@@ -10,9 +10,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 from PIL import Image
-
 from visualizar_cenarios import LANE_CENTERS, ScenarioGallery
-
 
 ROOT = Path(__file__).resolve().parent
 
@@ -45,7 +43,11 @@ def export_scene(
         image = Image.frombytes("RGB", gallery.screen.get_size(), pixels)
         # O recorte vertical completo mostra a entrada e seus efeitos próprios.
         # Minas mantém a água pintada no fundo, sem sobreposição animada.
-        frames.append(image.crop((880, 68, 1280, 650)).convert("P", palette=Image.Palette.ADAPTIVE, colors=192))
+        frames.append(
+            image.crop((880, 68, 1280, 650)).convert(
+                "P", palette=Image.Palette.ADAPTIVE, colors=192
+            )
+        )
     frames[0].save(
         destination,
         save_all=True,
@@ -104,7 +106,10 @@ def export_defense_limits(filename: str) -> Path:
             pixels = pygame.image.tobytes(gallery.screen, "RGB")
             image = Image.frombytes("RGB", gallery.screen.get_size(), pixels)
             lane_y = LANE_CENTERS[gallery.kind][gallery.selected_lane]
-            strip.paste(image.crop((150, lane_y - 50, 1120, lane_y + 50)), (0, scene_index * 100))
+            strip.paste(
+                image.crop((150, lane_y - 50, 1120, lane_y + 50)),
+                (0, scene_index * 100),
+            )
         frames.append(strip.convert("P", palette=Image.Palette.ADAPTIVE, colors=192))
     frames[0].save(
         destination,
@@ -122,7 +127,9 @@ def export_defense_limits(filename: str) -> Path:
 def main() -> int:
     outputs = (
         export_scene(1, "cidade_sem_fumaca_animada.gif"),
-        export_scene(2, "piras_egito_animadas.gif", horde_active=True, animate_horde=True),
+        export_scene(
+            2, "piras_egito_animadas.gif", horde_active=True, animate_horde=True
+        ),
         export_scene(
             2,
             "chefe_egito_nevoa_piras.gif",
@@ -132,7 +139,9 @@ def main() -> int:
             animate_arrival=True,
         ),
         export_scene(3, "cenario_minas_sem_animacao_agua.gif"),
-        export_scene(3, "chefe_minas_tempestade.gif", boss_active=True, animate_arrival=True),
+        export_scene(
+            3, "chefe_minas_tempestade.gif", boss_active=True, animate_arrival=True
+        ),
         export_generals("generais_saudacao_regional.gif"),
         export_defense_limits("defesas_encerram_no_fim_da_pista.gif"),
     )

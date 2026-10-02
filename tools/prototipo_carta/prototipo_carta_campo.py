@@ -14,13 +14,11 @@ Todo movimento e toda troca de quadro são governados por ``dt``.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygame
-
 
 WIDTH, HEIGHT = 1280, 720
 ROOT = Path(__file__).resolve().parent
@@ -34,8 +32,7 @@ SCENARIO = (
 )
 
 sys.path.insert(0, str(PROJECT_ROOT))
-from animation2d import AnimationClip, Entity, SpriteSheet  # noqa: E402
-
+from animation2d import AnimationClip, Entity, SpriteSheet
 
 LANE_CENTERS = (280, 368, 458, 553)
 GROUND_OFFSETS = (36, 38, 39, 39)
@@ -59,7 +56,9 @@ def scale_pixel_art(surface: pygame.Surface, target_height: int) -> pygame.Surfa
     return pygame.transform.scale(surface, (target_width, target_height))
 
 
-def normalize_cells(frames: list[pygame.Surface], target_height: int) -> list[pygame.Surface]:
+def normalize_cells(
+    frames: list[pygame.Surface], target_height: int
+) -> list[pygame.Surface]:
     """Recorta cada pose e recompõe uma sequência com pés e pivô estáveis."""
     bounds = [frame.get_bounding_rect(min_alpha=8) for frame in frames]
     if any(rect.width <= 0 or rect.height <= 0 for rect in bounds):
@@ -73,7 +72,9 @@ def normalize_cells(frames: list[pygame.Surface], target_height: int) -> list[py
         canvas = pygame.Surface((width, height), pygame.SRCALPHA)
         # Todos os pés encostam na mesma base. A oscilação horizontal vem do
         # desenho do corpo, não de um retângulo transparente irregular.
-        canvas.blit(crop, ((width - crop.get_width()) // 2, height - crop.get_height() - 3))
+        canvas.blit(
+            crop, ((width - crop.get_width()) // 2, height - crop.get_height() - 3)
+        )
         normalized.append(scale_pixel_art(canvas, target_height))
     return normalized
 
@@ -154,7 +155,9 @@ def pad_animation_groups(
     return padded
 
 
-def load_two_row_sheet(path: Path, target_height: int) -> tuple[list[pygame.Surface], list[pygame.Surface]]:
+def load_two_row_sheet(
+    path: Path, target_height: int
+) -> tuple[list[pygame.Surface], list[pygame.Surface]]:
     sheet = SpriteSheet.from_file(path)
     frames = keep_main_figure(sheet.slice_equal(8, 2))
     # As duas fileiras são normalizadas juntas. Assim, a transição de andar
@@ -193,12 +196,18 @@ class Prototype:
         guard_groups = pad_animation_groups({"move": guard_walk, "idle": guard_idle})
         zombie_groups = pad_animation_groups({"move": zombie_walk, "idle": zombie_idle})
         self.guard_clips = {
-            "move": AnimationClip.uniform(guard_groups["move"], fps=8.0, name="implantação"),
+            "move": AnimationClip.uniform(
+                guard_groups["move"], fps=8.0, name="implantação"
+            ),
             "idle": AnimationClip.uniform(guard_groups["idle"], fps=5.0, name="pronto"),
         }
         self.zombie_clips = {
-            "move": AnimationClip.uniform(zombie_groups["move"], fps=7.0, name="caminhada"),
-            "idle": AnimationClip.uniform(zombie_groups["idle"], fps=4.5, name="ameaça"),
+            "move": AnimationClip.uniform(
+                zombie_groups["move"], fps=7.0, name="caminhada"
+            ),
+            "idle": AnimationClip.uniform(
+                zombie_groups["idle"], fps=4.5, name="ameaça"
+            ),
         }
         self.card_portrait = guard_groups["idle"][1]
         self.guard: Entity | None = None
@@ -271,7 +280,10 @@ class Prototype:
             self.zombie.update(dt)
 
         if self.guard is not None and self.deployment is not None:
-            if not self.deployment.arrived and self.guard.position.x >= self.deployment.target_x:
+            if (
+                not self.deployment.arrived
+                and self.guard.position.x >= self.deployment.target_x
+            ):
                 self.guard.position.x = self.deployment.target_x
                 self.guard.velocity.x = 0.0
                 self.guard.set_state("idle")
@@ -329,8 +341,13 @@ class Prototype:
         portrait = self.card_portrait
         if portrait.get_height() > 82:
             portrait = scale_pixel_art(portrait, 82)
-        self.screen.blit(portrait, portrait.get_rect(midbottom=(portrait_box.centerx, portrait_box.bottom)))
-        self.screen.blit(self.tiny.render("GUARDA DE RUA", True, (245, 248, 237)), (98, 23))
+        self.screen.blit(
+            portrait,
+            portrait.get_rect(midbottom=(portrait_box.centerx, portrait_box.bottom)),
+        )
+        self.screen.blit(
+            self.tiny.render("GUARDA DE RUA", True, (245, 248, 237)), (98, 23)
+        )
         self.screen.blit(self.tiny.render("CUSTO 90", True, (255, 201, 76)), (98, 44))
         self.screen.blit(self.tiny.render("VIDA 160", True, (142, 236, 215)), (98, 63))
         self.screen.blit(self.tiny.render("24 BALAS", True, (142, 236, 215)), (98, 82))
@@ -345,7 +362,10 @@ class Prototype:
                 "Protótipo atual: implantação e postura de espera",
             )
             for index, line in enumerate(lines):
-                self.screen.blit(self.small.render(line, True, (222, 235, 229)), (232, 27 + index * 24))
+                self.screen.blit(
+                    self.small.render(line, True, (222, 235, 229)),
+                    (232, 27 + index * 24),
+                )
 
     def draw_ui(self) -> None:
         top = pygame.Surface((WIDTH, 126), pygame.SRCALPHA)
@@ -358,9 +378,13 @@ class Prototype:
         label = self.small.render("RECOMEÇAR  [R]", True, (250, 241, 210))
         self.screen.blit(label, label.get_rect(center=RESET_RECT.center))
 
-        title = self.font.render("ENSAIO 1 — CARTA, TROPA E ZUMBI", True, (245, 248, 237))
+        title = self.font.render(
+            "ENSAIO 1 — CARTA, TROPA E ZUMBI", True, (245, 248, 237)
+        )
         self.screen.blit(title, (642, 18))
-        self.screen.blit(self.small.render(self.notice, True, (143, 229, 211)), (642, 55))
+        self.screen.blit(
+            self.small.render(self.notice, True, (143, 229, 211)), (642, 55)
+        )
         hint = "Clique: selecionar/posicionar   |   R: recomeçar   |   ESC: sair"
         self.screen.blit(self.small.render(hint, True, (190, 196, 199)), (642, 82))
 
@@ -384,7 +408,9 @@ class Prototype:
         running = True
         rendered = 0
         while running:
-            dt = 1.0 / 60.0 if self.headless else min(0.05, self.clock.tick(60) / 1000.0)
+            dt = (
+                1.0 / 60.0 if self.headless else min(0.05, self.clock.tick(60) / 1000.0)
+            )
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -400,7 +426,11 @@ class Prototype:
                         self.reset()
                     elif CARD_RECT.collidepoint(event.pos) and self.guard is None:
                         self.selected = not self.selected
-                        self.notice = "Agora escolha um quadrado iluminado." if self.selected else "Seleção cancelada."
+                        self.notice = (
+                            "Agora escolha um quadrado iluminado."
+                            if self.selected
+                            else "Seleção cancelada."
+                        )
                     elif self.selected:
                         cell = self.cell_at(event.pos)
                         if cell is not None:

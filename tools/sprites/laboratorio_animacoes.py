@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pygame
 
-
 ROOT = Path(__file__).resolve().parent
 RAW_FRAMES_ROOT = ROOT / "frames"
 CLEAN_FRAMES_ROOT = ROOT / "frames_sem_chroma"
@@ -115,7 +114,13 @@ ACTION_NAMES = {
     "respingo_agua": "Respingo de água",
 }
 
-ONE_SHOT_ACTIONS = {"morrendo", "explosao", "muzzle_flash", "respingo_agua", "ataque_pesado"}
+ONE_SHOT_ACTIONS = {
+    "morrendo",
+    "explosao",
+    "muzzle_flash",
+    "respingo_agua",
+    "ataque_pesado",
+}
 TRAVEL_ACTIONS = {"andando", "trator_esteiras"}
 EXCLUDED_SHEET_KEYS = {"ambiente"}
 LEFTWARD_SHEETS = {
@@ -140,7 +145,9 @@ class AnimationItem:
 
     @property
     def title(self) -> str:
-        return PRETTY_NAMES.get(self.sheet_key, self.sheet_key.replace("_", " ").title())
+        return PRETTY_NAMES.get(
+            self.sheet_key, self.sheet_key.replace("_", " ").title()
+        )
 
     @property
     def action_title(self) -> str:
@@ -185,10 +192,23 @@ class Button:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Testa todas as animações pixel art da Beta 4.")
-    parser.add_argument("--headless", action="store_true", help="Executa uma verificação automática sem janela.")
-    parser.add_argument("--frames", type=int, default=45, help="Quantidade de quadros do teste headless.")
-    parser.add_argument("--screenshot", type=Path, help="Salva uma captura durante o teste headless.")
+    parser = argparse.ArgumentParser(
+        description="Testa todas as animações pixel art da Beta 4."
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Executa uma verificação automática sem janela.",
+    )
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=45,
+        help="Quantidade de quadros do teste headless.",
+    )
+    parser.add_argument(
+        "--screenshot", type=Path, help="Salva uma captura durante o teste headless."
+    )
     return parser.parse_args()
 
 
@@ -336,10 +356,7 @@ def load_frame(path: Path) -> pygame.Surface:
         green = rgb[:, :, 1].astype("float32")
         blue = rgb[:, :, 2].astype("float32")
         chroma_residue = (
-            (alpha > 0)
-            & (green > 20)
-            & (green > red + 4)
-            & (green > blue + 3)
+            (alpha > 0) & (green > 20) & (green > red + 4) & (green > blue + 3)
         )
         dark_chroma_residue = (
             (alpha > 0)
@@ -387,7 +404,9 @@ def load_frame(path: Path) -> pygame.Surface:
                     setcolor=(255, 255, 255, 0),
                     unsetcolor=(255, 255, 255, 255),
                 )
-                cleaned.blit(intrusion_cutout, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                cleaned.blit(
+                    intrusion_cutout, (0, 0), special_flags=pygame.BLEND_RGBA_MULT
+                )
 
     # Um pixel totalmente transparente ainda pode guardar RGB verde. Embora o
     # alfa o esconda, certos redimensionadores misturam esse RGB com a borda e
@@ -429,7 +448,9 @@ def discover_items(manifest: dict) -> list[AnimationItem]:
     return items
 
 
-def fit_nearest(surface: pygame.Surface, box: tuple[int, int], zoom: float = 1.0) -> pygame.Surface:
+def fit_nearest(
+    surface: pygame.Surface, box: tuple[int, int], zoom: float = 1.0
+) -> pygame.Surface:
     """Ajusta sem suavização para preservar os pixels da arte 16-bit."""
     width, height = surface.get_size()
     factor = min(box[0] / max(1, width), box[1] / max(1, height)) * zoom
@@ -457,7 +478,9 @@ class AnimationLaboratory:
         pygame.init()
         flags = pygame.HIDDEN if headless else 0
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-        pygame.display.set_caption("Soldados vs Zumbis — Validação das Animações Beta 4")
+        pygame.display.set_caption(
+            "Soldados vs Zumbis — Validação das Animações Beta 4"
+        )
         self.clock = pygame.time.Clock()
 
         self.font_title = pygame.font.SysFont("arial", 27, bold=True)
@@ -504,7 +527,9 @@ class AnimationLaboratory:
     def mark(self, status: str) -> None:
         self.reviews[self.item.key] = status
         save_reviews(self.reviews)
-        self.toast = "APROVADA E SALVA" if status == "aprovada" else "MARCADA PARA AJUSTE"
+        self.toast = (
+            "APROVADA E SALVA" if status == "aprovada" else "MARCADA PARA AJUSTE"
+        )
         self.toast_timer = 1.8
 
     def update(self, dt: float) -> None:
@@ -566,7 +591,10 @@ class AnimationLaboratory:
         if event.type == pygame.QUIT:
             return False
         if event.type == pygame.MOUSEWHEEL:
-            self.scroll = max(0, min(max(0, len(self.items) - VISIBLE_ROWS), self.scroll - event.y * 3))
+            self.scroll = max(
+                0,
+                min(max(0, len(self.items) - VISIBLE_ROWS), self.scroll - event.y * 3),
+            )
             return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for button in self.buttons:
@@ -585,9 +613,7 @@ class AnimationLaboratory:
             return False
         if event.key in {pygame.K_RIGHT, pygame.K_PAGEDOWN, pygame.K_TAB}:
             self.select(self.selected + 1)
-        elif event.key in {pygame.K_LEFT, pygame.K_PAGEUP}:
-            self.select(self.selected - 1)
-        elif event.key == pygame.K_UP:
+        elif event.key in {pygame.K_LEFT, pygame.K_PAGEUP} or event.key == pygame.K_UP:
             self.select(self.selected - 1)
         elif event.key == pygame.K_DOWN:
             self.select(self.selected + 1)
@@ -614,7 +640,9 @@ class AnimationLaboratory:
             self.fps = self.item.default_fps
         return True
 
-    def add_button(self, rect: pygame.Rect, text: str, action: str, tone: str = "neutral") -> None:
+    def add_button(
+        self, rect: pygame.Rect, text: str, action: str, tone: str = "neutral"
+    ) -> None:
         self.buttons.append(Button(rect, text, action, tone))
 
     def draw_button(self, button: Button, mouse: tuple[int, int]) -> None:
@@ -630,10 +658,23 @@ class AnimationLaboratory:
             color = tuple(min(255, channel + 24) for channel in color)
         pygame.draw.rect(self.screen, color, button.rect, border_radius=7)
         pygame.draw.rect(self.screen, LINE, button.rect, 1, border_radius=7)
-        draw_text(self.screen, self.font_button, button.text, WHITE, button.rect.center, center=True)
+        draw_text(
+            self.screen,
+            self.font_button,
+            button.text,
+            WHITE,
+            button.rect.center,
+            center=True,
+        )
 
     def draw_header(self) -> None:
-        draw_text(self.screen, self.font_title, "LABORATÓRIO DE ANIMAÇÕES — BETA 4", WHITE, (20, 17))
+        draw_text(
+            self.screen,
+            self.font_title,
+            "LABORATÓRIO DE ANIMAÇÕES — BETA 4",
+            WHITE,
+            (20, 17),
+        )
         draw_text(
             self.screen,
             self.font_body,
@@ -645,7 +686,9 @@ class AnimationLaboratory:
         approved = sum(self.reviews.get(key) == "aprovada" for key in active_keys)
         adjust = sum(self.reviews.get(key) == "ajustar" for key in active_keys)
         pending = len(self.items) - approved - adjust
-        summary = f"APROVADAS {approved:02d}   AJUSTAR {adjust:02d}   PENDENTES {pending:02d}"
+        summary = (
+            f"APROVADAS {approved:02d}   AJUSTAR {adjust:02d}   PENDENTES {pending:02d}"
+        )
         summary_image = self.font_small.render(summary, True, CYAN)
         self.screen.blit(summary_image, summary_image.get_rect(topright=(1260, 31)))
 
@@ -668,10 +711,18 @@ class AnimationLaboratory:
     def draw_sidebar(self) -> None:
         pygame.draw.rect(self.screen, PANEL, SIDEBAR, border_radius=10)
         pygame.draw.rect(self.screen, LINE, SIDEBAR, 1, border_radius=10)
-        draw_text(self.screen, self.font_h2, "TODAS AS ANIMAÇÕES", WHITE, (SIDEBAR.x + 14, SIDEBAR.y + 11))
+        draw_text(
+            self.screen,
+            self.font_h2,
+            "TODAS AS ANIMAÇÕES",
+            WHITE,
+            (SIDEBAR.x + 14, SIDEBAR.y + 11),
+        )
         y = SIDEBAR.y + 42
         mouse = pygame.mouse.get_pos()
-        for row, index in enumerate(range(self.scroll, min(len(self.items), self.scroll + VISIBLE_ROWS))):
+        for row, index in enumerate(
+            range(self.scroll, min(len(self.items), self.scroll + VISIBLE_ROWS))
+        ):
             item = self.items[index]
             rect = pygame.Rect(SIDEBAR.x + 8, y + row * 32, SIDEBAR.width - 16, 29)
             selected = index == self.selected
@@ -681,12 +732,22 @@ class AnimationLaboratory:
                 pygame.draw.rect(self.screen, PANEL_2, rect, border_radius=5)
             status = self.reviews.get(item.key)
             icon = "✓" if status == "aprovada" else "!" if status == "ajustar" else "·"
-            icon_color = GREEN if status == "aprovada" else RED if status == "ajustar" else MUTED
-            draw_text(self.screen, self.font_body, icon, icon_color, (rect.x + 7, rect.y + 5))
+            icon_color = (
+                GREEN if status == "aprovada" else RED if status == "ajustar" else MUTED
+            )
+            draw_text(
+                self.screen, self.font_body, icon, icon_color, (rect.x + 7, rect.y + 5)
+            )
             label = f"{index + 1:02d} {item.title} — {item.action_title}"
             if len(label) > 39:
                 label = label[:38] + "…"
-            draw_text(self.screen, self.font_small, label, WHITE if selected else MUTED, (rect.x + 27, rect.y + 7))
+            draw_text(
+                self.screen,
+                self.font_small,
+                label,
+                WHITE if selected else MUTED,
+                (rect.x + 27, rect.y + 7),
+            )
 
         footer_y = SIDEBAR.bottom - 35
         draw_text(
@@ -715,8 +776,16 @@ class AnimationLaboratory:
         pygame.draw.rect(self.screen, LINE, STAGE, 1, border_radius=10)
 
         item = self.item
-        draw_text(self.screen, self.font_h2, item.title, WHITE, (STAGE.x + 18, STAGE.y + 14))
-        draw_text(self.screen, self.font_body, item.action_title, GOLD, (STAGE.x + 18, STAGE.y + 43))
+        draw_text(
+            self.screen, self.font_h2, item.title, WHITE, (STAGE.x + 18, STAGE.y + 14)
+        )
+        draw_text(
+            self.screen,
+            self.font_body,
+            item.action_title,
+            GOLD,
+            (STAGE.x + 18, STAGE.y + 43),
+        )
         draw_text(
             self.screen,
             self.font_small,
@@ -725,21 +794,43 @@ class AnimationLaboratory:
             (STAGE.x + 18, STAGE.y + 68),
         )
         behavior = "UMA VEZ + REPETIÇÃO DE TESTE" if item.one_shot else "LOOP CONTÍNUO"
-        draw_text(self.screen, self.font_small, behavior, CYAN, (STAGE.right - 253, STAGE.y + 18))
+        draw_text(
+            self.screen,
+            self.font_small,
+            behavior,
+            CYAN,
+            (STAGE.right - 253, STAGE.y + 18),
+        )
 
         frame = item.frames[self.frame_index]
         display = fit_nearest(frame, (STAGE.width - 120, STAGE.height - 150), self.zoom)
         floor_y = STAGE.bottom - 51
         if self.show_baseline:
-            pygame.draw.line(self.screen, (75, 126, 124), (STAGE.x + 38, floor_y), (STAGE.right - 38, floor_y), 1)
+            pygame.draw.line(
+                self.screen,
+                (75, 126, 124),
+                (STAGE.x + 38, floor_y),
+                (STAGE.right - 38, floor_y),
+                1,
+            )
             for x in range(STAGE.x + 38, STAGE.right - 38, 64):
-                pygame.draw.line(self.screen, (46, 76, 77), (x, floor_y - 5), (x, floor_y + 5), 1)
-            draw_text(self.screen, self.font_small, "LINHA DO CHÃO", (94, 150, 146), (STAGE.x + 42, floor_y + 9))
+                pygame.draw.line(
+                    self.screen, (46, 76, 77), (x, floor_y - 5), (x, floor_y + 5), 1
+                )
+            draw_text(
+                self.screen,
+                self.font_small,
+                "LINHA DO CHÃO",
+                (94, 150, 146),
+                (STAGE.x + 42, floor_y + 9),
+            )
 
         if item.travels:
             left = STAGE.x + 90
             right = STAGE.right - 90
-            progress = 1.0 - self.travel_position if item.moves_left else self.travel_position
+            progress = (
+                1.0 - self.travel_position if item.moves_left else self.travel_position
+            )
             center_x = int(left + (right - left) * progress)
         else:
             center_x = STAGE.centerx
@@ -752,7 +843,9 @@ class AnimationLaboratory:
             text = "APROVADA" if status == "aprovada" else "PRECISA AJUSTAR"
             badge = pygame.Rect(STAGE.right - 188, STAGE.bottom - 42, 160, 28)
             pygame.draw.rect(self.screen, color, badge, border_radius=14)
-            draw_text(self.screen, self.font_button, text, BG, badge.center, center=True)
+            draw_text(
+                self.screen, self.font_button, text, BG, badge.center, center=True
+            )
 
     def draw_filmstrip(self) -> None:
         pygame.draw.rect(self.screen, PANEL, FILMSTRIP, border_radius=10)
@@ -775,11 +868,24 @@ class AnimationLaboratory:
             rect = pygame.Rect(start_x + index * (cell_width + gap), y, cell_width, 85)
             selected = index == self.frame_index
             pygame.draw.rect(self.screen, (28, 39, 48), rect, border_radius=5)
-            pygame.draw.rect(self.screen, GOLD if selected else LINE, rect, 3 if selected else 1, border_radius=5)
+            pygame.draw.rect(
+                self.screen,
+                GOLD if selected else LINE,
+                rect,
+                3 if selected else 1,
+                border_radius=5,
+            )
             thumb = fit_nearest(frame, (rect.width - 8, rect.height - 22), 1.0)
             thumb_rect = thumb.get_rect(center=(rect.centerx, rect.centery - 5))
             self.screen.blit(thumb, thumb_rect)
-            draw_text(self.screen, self.font_small, str(index + 1), WHITE, (rect.centerx, rect.bottom - 11), center=True)
+            draw_text(
+                self.screen,
+                self.font_small,
+                str(index + 1),
+                WHITE,
+                (rect.centerx, rect.bottom - 11),
+                center=True,
+            )
 
     def draw_footer_controls(self) -> None:
         y = STAGE.bottom - 39
@@ -790,7 +896,12 @@ class AnimationLaboratory:
             ("CHROMA", "chroma", 86),
             ("LINHA DO CHÃO", "baseline", 132),
         ]:
-            self.add_button(pygame.Rect(x, y, width, 28), text, action, "cyan" if action in {"chroma", "baseline"} else "neutral")
+            self.add_button(
+                pygame.Rect(x, y, width, 28),
+                text,
+                action,
+                "cyan" if action in {"chroma", "baseline"} else "neutral",
+            )
             x += width + 7
 
     def draw(self) -> None:
@@ -808,7 +919,14 @@ class AnimationLaboratory:
             toast = pygame.Rect(STAGE.centerx - 145, STAGE.y + 96, 290, 38)
             pygame.draw.rect(self.screen, (7, 18, 22), toast, border_radius=19)
             pygame.draw.rect(self.screen, CYAN, toast, 2, border_radius=19)
-            draw_text(self.screen, self.font_button, self.toast, WHITE, toast.center, center=True)
+            draw_text(
+                self.screen,
+                self.font_button,
+                self.toast,
+                WHITE,
+                toast.center,
+                center=True,
+            )
         pygame.display.flip()
 
     def run(self) -> None:

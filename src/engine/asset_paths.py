@@ -1,7 +1,7 @@
 """Encontra as artes compartilhadas pelo jogo-fonte e pelos executaveis nativos."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def game_root() -> Path:

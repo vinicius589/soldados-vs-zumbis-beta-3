@@ -10,7 +10,6 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
 
-
 ROOT = Path(__file__).resolve().parent
 FINAL = ROOT / "final"
 FRAMES = ROOT / "frames"
@@ -63,7 +62,9 @@ def split_component_aware(path: Path, key: str, columns: int, rows: list[str]) -
         y0 = round(row_index * height / len(rows))
         y1 = round((row_index + 1) * height / len(rows))
         row = _remove_chroma(image.subsurface((0, y0, width, y1 - y0)).copy())
-        components = pygame.mask.from_surface(row, threshold=1).connected_components(minimum=80)
+        components = pygame.mask.from_surface(row, threshold=1).connected_components(
+            minimum=80
+        )
         if len(components) < columns:
             raise RuntimeError(
                 f"{key}/{action}: apenas {len(components)} silhuetas; esperadas {columns}."
@@ -94,7 +95,12 @@ def split_component_aware(path: Path, key: str, columns: int, rows: list[str]) -
                 max(1, round(crop.get_height() * factor)),
             )
             scaled = pygame.transform.scale(crop, size)
-            frame.blit(scaled, scaled.get_rect(midbottom=(frame.get_width() // 2, frame.get_height() - 4)))
+            frame.blit(
+                scaled,
+                scaled.get_rect(
+                    midbottom=(frame.get_width() // 2, frame.get_height() - 4)
+                ),
+            )
             pygame.image.save(frame, str(destination / f"frame_{column:02d}.png"))
             count += 1
     return count

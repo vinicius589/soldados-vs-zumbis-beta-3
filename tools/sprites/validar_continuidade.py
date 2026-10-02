@@ -11,7 +11,6 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 
-
 ROOT = Path(__file__).resolve().parent
 FRAMES = ROOT / "frames_sem_chroma"
 MANIFEST = ROOT / "sheet_manifest.json"
@@ -58,7 +57,9 @@ def main() -> int:
         for action in spec["rows"]:
             paths = sorted((FRAMES / key / str(action)).glob("frame_*.png"))
             if len(paths) != expected:
-                errors.append(f"{key}/{action}: {len(paths)} arquivos, esperados {expected}")
+                errors.append(
+                    f"{key}/{action}: {len(paths)} arquivos, esperados {expected}"
+                )
             for path in paths:
                 frame = pygame.image.load(str(path)).convert_alpha()
                 alpha = pygame.surfarray.array_alpha(frame)
@@ -71,21 +72,22 @@ def main() -> int:
                     or (alpha[:, 0:2] > 0).any()
                     or (alpha[:, -2:] > 0).any()
                 ):
-                    errors.append(f"{path.relative_to(ROOT)}: conteúdo invadindo a borda")
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: conteúdo invadindo a borda"
+                    )
                 red = rgb[:, :, 0].astype("float32")
                 green = rgb[:, :, 1].astype("float32")
                 blue = rgb[:, :, 2].astype("float32")
-                exact_green = (
-                    (red == 0)
-                    & (green == 255)
-                    & (blue == 0)
-                    & (alpha > 0)
-                )
+                exact_green = (red == 0) & (green == 255) & (blue == 0) & (alpha > 0)
                 if exact_green.any():
-                    errors.append(f"{path.relative_to(ROOT)}: chroma verde puro ainda visível")
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: chroma verde puro ainda visível"
+                    )
                 hidden_rgb = (alpha == 0) & (rgb.sum(axis=2) > 0)
                 if hidden_rgb.any():
-                    errors.append(f"{path.relative_to(ROOT)}: RGB residual escondido na transparência")
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: RGB residual escondido na transparência"
+                    )
 
                 # O chroma também pode deixar um contorno verde-escuro. A
                 # auditoria se limita à faixa externa da silhueta para não
@@ -106,11 +108,7 @@ def main() -> int:
                     near
                     & (alpha > 0)
                     & (
-                        (
-                            (green > 20)
-                            & (green > red + 4)
-                            & (green > blue + 3)
-                        )
+                        ((green > 20) & (green > red + 4) & (green > blue + 3))
                         | (
                             (green > 4)
                             & (green < 60)
@@ -120,12 +118,16 @@ def main() -> int:
                     )
                 )
                 if key not in GREEN_DETAIL_SHEETS and green_halo.any():
-                    errors.append(f"{path.relative_to(ROOT)}: halo verde ainda visível na borda")
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: halo verde ainda visível na borda"
+                    )
                 total += 1
                 sheet_total += 1
         lines.append(f"OK  {key}: {sheet_total} quadros; direção {DIRECTION[key]}")
 
-    lines.extend(["", f"TOTAL: {total} quadros ativos", f"ERROS ESTRUTURAIS: {len(errors)}"])
+    lines.extend(
+        ["", f"TOTAL: {total} quadros ativos", f"ERROS ESTRUTURAIS: {len(errors)}"]
+    )
     if errors:
         lines.extend(["", "PROBLEMAS:", *[f"- {error}" for error in errors]])
     else:
